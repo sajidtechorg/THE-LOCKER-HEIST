@@ -1,0 +1,3 @@
+Detective|Result|Credibility|Turns_Left|Culprit|Date
+Agent_007|LOSE|0|05|Servant|11-10-26
+Insp.Jamshad|WIN|35|07|Partner_2|10-10-26
