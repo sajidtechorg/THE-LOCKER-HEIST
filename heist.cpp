@@ -1,23 +1,64 @@
 #include "heist.h"
 
+// ---------- character ----------
+
+Character::Character(string name, string role, string nation, bool culprit) {
+    characterName = name;
+    characterRole = role;
+    nationality = nation;
+    isCulprit = culprit;
+}
+
+// virtual destructor so derived objects are deleted correctly through a base pointer
+Character::~Character() {
+}
+
+string Character::get_name() const {
+    return characterName;
+}
+
+string Character::get_role() const {
+    return characterRole;
+}
+
+string Character::get_nationality() const {
+    return nationality;
+}
+
+bool Character::is_culprit() const {
+    return isCulprit;
+}
+
+void Character::set_culprit(bool value) {
+    isCulprit = value;
+}
+
+// default answers for characters that do not give a letter, like the detective
+char Character::get_letter() const {
+    return ' ';
+}
+
+int Character::get_position() const {
+    return 0;
+}
+
+WordRow Character::get_row() const {
+    return Word2;
+}
+
 // ---------- detective ----------
 
 // default detective with no name and no credibility
-Detective::Detective() {
-    detective_name = "";
+Detective::Detective() : Character("", "Detective", "Malay", false) {
     credibility = 0;
     turns = 0;
 }
 
 // detective created with a name and starting credibility
-Detective::Detective(string name, int starting_credibility) {
-    detective_name = name;
+Detective::Detective(string name, int starting_credibility)
+    : Character(name, "Detective", "Malay", false) {
     credibility = starting_credibility;
     turns = 0;
-}
-
-string Detective::get_name() const {
-    return detective_name;
 }
 
 int Detective::get_credibility() const {
@@ -26,10 +67,6 @@ int Detective::get_credibility() const {
 
 int Detective::get_turns() const {
     return turns;
-}
-
-void Detective::set_name(string name) {
-    detective_name = name;
 }
 
 // credibility never goes below zero
@@ -45,6 +82,159 @@ void Detective::use_turn() {
     turns++;
 }
 
+// the detective is never interviewed
+int Detective::required_credibility() const {
+    return 0;
+}
+
+void Detective::display() const {
+    cout << get_name() << " (Detective) - Credibility: " << credibility
+         << " | Turns used: " << turns << endl;
+}
+
+// ---------- victim ----------
+
+Victim::Victim(string name, string nation, char letter, int position)
+    : Character(name, "Victim", nation, false) {
+    letterClueChar = letter;
+    boardPosChar = position;
+    clueRowChar = Word2;
+}
+
+char Victim::get_letter() const {
+    return letterClueChar;
+}
+
+int Victim::get_position() const {
+    return boardPosChar;
+}
+
+WordRow Victim::get_row() const {
+    return clueRowChar;
+}
+
+// the owner can only be interviewed with high credibility
+int Victim::required_credibility() const {
+    return 80;
+}
+
+void Victim::display() const {
+    cout << get_name() << " (Victim) - " << get_nationality()
+         << " - Owner of the cottage" << endl;
+}
+
+// ---------- suspect and its groups ----------
+
+Suspect::Suspect(string name, string role, string nation, char letter, int position)
+    : Character(name, role, nation, false) {
+    letterClueChar = letter;
+    boardPosChar = position;
+    clueRowChar = Word2;
+}
+
+char Suspect::get_letter() const {
+    return letterClueChar;
+}
+
+int Suspect::get_position() const {
+    return boardPosChar;
+}
+
+WordRow Suspect::get_row() const {
+    return clueRowChar;
+}
+
+// the suspect part is built by the most derived class, so it is repeated here
+BusinessRelations::BusinessRelations(string name, string role, string nation, char letter, int position)
+    : Suspect(name, role, nation, letter, position) {
+}
+
+int BusinessRelations::required_credibility() const {
+    return 50;
+}
+
+HouseHelp::HouseHelp(string name, string role, string nation, char letter, int position)
+    : Suspect(name, role, nation, letter, position) {
+}
+
+int HouseHelp::required_credibility() const {
+    return 0;
+}
+
+CloseRelations::CloseRelations(string name, string role, string nation, char letter, int position)
+    : Suspect(name, role, nation, letter, position) {
+}
+
+int CloseRelations::required_credibility() const {
+    return 75;
+}
+
+// ---------- the seven suspect roles ----------
+
+Partner::Partner(string name, string role, string nation, char letter, int position)
+    : Suspect(name, role, nation, letter, position),
+      BusinessRelations(name, role, nation, letter, position) {
+}
+
+void Partner::display() const {
+    cout << get_name() << " (" << get_role() << ") - " << get_nationality()
+         << " - Business partner of the owner" << endl;
+}
+
+// pa builds the single suspect part itself because of the virtual inheritance
+PA::PA(string name, string nation, char letter, int position)
+    : Suspect(name, "PA", nation, letter, position),
+      BusinessRelations(name, "PA", nation, letter, position),
+      CloseRelations(name, "PA", nation, letter, position) {
+}
+
+// both parents give a different value, so pa decides which one is used
+int PA::required_credibility() const {
+    return 35;
+}
+
+void PA::display() const {
+    cout << get_name() << " (PA) - " << get_nationality()
+         << " - Right hand of the owner and knows the secrets" << endl;
+}
+
+Cook::Cook(string name, string nation, char letter, int position)
+    : HouseHelp(name, "Cook", nation, letter, position) {
+}
+
+void Cook::display() const {
+    cout << get_name() << " (Cook) - " << get_nationality()
+         << " - Works in the kitchen" << endl;
+}
+
+Guard::Guard(string name, string nation, char letter, int position)
+    : HouseHelp(name, "Guard", nation, letter, position) {
+}
+
+void Guard::display() const {
+    cout << get_name() << " (Guard) - " << get_nationality()
+         << " - Guards the cottage" << endl;
+}
+
+Servant::Servant(string name, string nation, char letter, int position)
+    : HouseHelp(name, "Servant", nation, letter, position) {
+}
+
+void Servant::display() const {
+    cout << get_name() << " (Servant) - " << get_nationality()
+         << " - Serves in the cottage" << endl;
+}
+
+Child::Child(string name, string nation, char letter, int position)
+    : Suspect(name, "Child", nation, letter, position),
+      CloseRelations(name, "Child", nation, letter, position) {
+}
+
+void Child::display() const {
+    cout << get_name() << " (Child) - " << get_nationality()
+         << " - Panicked teenage child of the owner" << endl;
+}
+
 // ---------- game engine ----------
 
 // sets default values and seeds the random number generator
@@ -54,9 +244,26 @@ GameEngine::GameEngine() {
     starting_credibility = default_credibility;
     wrong_turn_penalty = default_wrong_turn;
     wrong_word_penalty = default_wrong_word;
-    culprit_name = "";
-    culprit_role = "";
+    characters = 0;
+    culprit = 0;
     srand((unsigned int)time(0));
+}
+
+// frees every character created by the engine
+GameEngine::~GameEngine() {
+    free_characters();
+}
+
+// deletes the characters through base pointers, the virtual destructor does the rest
+void GameEngine::free_characters() {
+    if (characters != 0) {
+        for (int i = 0; i < total_characters; i++) {
+            delete characters[i];
+        }
+        delete[] characters;
+        characters = 0;
+    }
+    culprit = 0;
 }
 
 // removes the hidden carriage return that windows files can leave at the end
@@ -95,6 +302,47 @@ bool GameEngine::has_space(const string& text) {
         }
     }
     return false;
+}
+
+// finds which column of characters.txt holds the letters for the culprit role
+int GameEngine::column_for_role(const string& role) {
+    if (role == "Cook") {
+        return 4;
+    } else if (role == "Guard") {
+        return 5;
+    } else if (role == "Servant") {
+        return 6;
+    } else if (role == "Partner 1") {
+        return 7;
+    } else if (role == "Partner 2") {
+        return 8;
+    } else if (role == "PA") {
+        return 9;
+    } else if (role == "Child") {
+        return 10;
+    }
+    return -1;
+}
+
+// builds the right character object for a role, returns 0 for an unknown role
+Character* GameEngine::create_character(const string& role, const string& name,
+                                        const string& nation, char letter, int position) {
+    if (role == "Victim") {
+        return new Victim(name, nation, letter, position);
+    } else if (role == "Cook") {
+        return new Cook(name, nation, letter, position);
+    } else if (role == "Guard") {
+        return new Guard(name, nation, letter, position);
+    } else if (role == "Servant") {
+        return new Servant(name, nation, letter, position);
+    } else if (role == "Partner 1" || role == "Partner 2") {
+        return new Partner(name, role, nation, letter, position);
+    } else if (role == "PA") {
+        return new PA(name, nation, letter, position);
+    } else if (role == "Child") {
+        return new Child(name, nation, letter, position);
+    }
+    return 0;
 }
 
 // reads one line and converts it to a number, returns -1 for invalid input
@@ -159,6 +407,16 @@ void GameEngine::show_rules() {
     cout << "Viewing the scrabble board is free and does not use a turn" << endl;
 }
 
+// temporary list that shows polymorphism, module 13 replaces it with the character menu
+void GameEngine::show_characters() const {
+    cout << endl;
+    cout << "-------- People in the cottage --------" << endl;
+    for (int i = 0; i < total_characters; i++) {
+        cout << "[" << (i + 1) << "] ";
+        characters[i]->display();
+    }
+}
+
 // reads rules.txt, falls back to the default values if it is missing or corrupt
 void GameEngine::load_rules() {
     max_turns = default_max_turns;
@@ -206,40 +464,73 @@ void GameEngine::load_rules() {
     }
 }
 
-// reads the seven suspects from characters.txt and picks one as the culprit
-bool GameEngine::load_culprit() {
+// reads characters.txt, picks the culprit and creates the eight character objects
+// every character gets the letter from the column of the culprit role
+bool GameEngine::load_characters() {
+    free_characters();
+
     ifstream file("characters.txt");
     if (!file) {
         cout << "Characters.txt could not be found" << endl;
         return false;
     }
 
-    string names[total_suspects];
-    string roles[total_suspects];
+    string lines[total_characters];
     string line;
 
     getline(file, line);   // header line
-    getline(file, line);   // victim line, the victim is never the culprit
 
     int count = 0;
-    while (count < total_suspects && getline(file, line)) {
+    while (count < total_characters && getline(file, line)) {
         clean_line(line);
         if (line.empty()) {
             continue;
         }
-        names[count] = get_field(line, 0);
-        roles[count] = get_field(line, 1);
+        lines[count] = line;
         count++;
     }
 
-    if (count < total_suspects) {
-        cout << "Characters.txt is corrupt, it needs " << total_suspects << " suspects" << endl;
+    if (count < total_characters) {
+        cout << "Characters.txt is corrupt, it needs " << total_characters << " people" << endl;
         return false;
     }
 
-    int pick = rand() % total_suspects;
-    culprit_name = names[pick];
-    culprit_role = roles[pick];
+    // line 0 is the victim, so the culprit is one of the seven suspects after it
+    int pick = 1 + rand() % total_suspects;
+    int column = column_for_role(get_field(lines[pick], 1));
+    if (column < 0) {
+        cout << "Characters.txt is corrupt, a role is not recognised" << endl;
+        return false;
+    }
+
+    characters = new Character*[total_characters];
+    for (int i = 0; i < total_characters; i++) {
+        characters[i] = 0;
+    }
+
+    for (int i = 0; i < total_characters; i++) {
+        string name = get_field(lines[i], 0);
+        string role = get_field(lines[i], 1);
+        string nation = get_field(lines[i], 2);
+        int position = atoi(get_field(lines[i], 3).c_str());
+        string letter = get_field(lines[i], column);
+
+        if (letter.empty() || position < 1 || position > total_characters) {
+            cout << "Characters.txt is corrupt, a letter or position is wrong" << endl;
+            free_characters();
+            return false;
+        }
+
+        characters[i] = create_character(role, name, nation, letter[0], position);
+        if (characters[i] == 0) {
+            cout << "Characters.txt is corrupt, a role is not recognised" << endl;
+            free_characters();
+            return false;
+        }
+    }
+
+    characters[pick]->set_culprit(true);
+    culprit = characters[pick];
     return true;
 }
 
@@ -259,7 +550,7 @@ void GameEngine::start_new_game() {
     }
 
     load_rules();
-    if (!load_culprit()) {
+    if (!load_characters()) {
         cout << "The game cannot start without the character data" << endl;
         return;
     }
@@ -270,6 +561,7 @@ void GameEngine::start_new_game() {
     cout << "A culprit has been secretly chosen. The game begins!" << endl;
     cout << "Credibility: " << detective.get_credibility()
          << " | Turns used: " << detective.get_turns() << endl;
+    show_characters();
 
     // the game menu is added in module 13, so go back to the main menu for now
     state = Menu;
