@@ -1,5 +1,79 @@
 #include "heist.h"
 
+// ---------- helper functions ----------
+
+// removes the hidden carriage return that windows files can leave at the end
+void clean_line(string& line) {
+    if (!line.empty() && line[line.size() - 1] == '\r') {
+        line.erase(line.size() - 1);
+    }
+}
+
+// returns the field at the given index from a line separated by |
+string get_field(const string& line, int index) {
+    int current = 0;
+    string field = "";
+    for (int i = 0; i < (int)line.size(); i++) {
+        if (line[i] == '|') {
+            if (current == index) {
+                return field;
+            }
+            current++;
+            field = "";
+        } else {
+            field = field + line[i];
+        }
+    }
+    if (current == index) {
+        return field;
+    }
+    return "";
+}
+
+// turns every letter into a capital letter
+string to_upper(const string& text) {
+    string result = text;
+    for (int i = 0; i < (int)result.size(); i++) {
+        if (result[i] >= 'a' && result[i] <= 'z') {
+            result[i] = result[i] - 'a' + 'A';
+        }
+    }
+    return result;
+}
+
+// changes underscores to spaces so file names look nice on screen
+string underscore_to_space(const string& text) {
+    string result = text;
+    for (int i = 0; i < (int)result.size(); i++) {
+        if (result[i] == '_') {
+            result[i] = ' ';
+        }
+    }
+    return result;
+}
+
+// position of a culprit role in the data files, -1 for an unknown role
+// the letters of that role sit in column 4 + index of characters.txt
+// and in column 2 + index of locations.txt
+int role_index(const string& role) {
+    if (role == "Cook") {
+        return 0;
+    } else if (role == "Guard") {
+        return 1;
+    } else if (role == "Servant") {
+        return 2;
+    } else if (role == "Partner 1") {
+        return 3;
+    } else if (role == "Partner 2") {
+        return 4;
+    } else if (role == "PA") {
+        return 5;
+    } else if (role == "Child") {
+        return 6;
+    }
+    return -1;
+}
+
 // ---------- character ----------
 
 Character::Character(string name, string role, string nation, bool culprit) {
@@ -235,6 +309,305 @@ void Child::display() const {
          << " - Panicked teenage child of the owner" << endl;
 }
 
+// ---------- module 4: cottage ----------
+
+// empty cottage, load() fills it
+Cottage::Cottage() {
+    locations = 0;
+    location_count = 0;
+}
+
+// deep copy: a new array is created and every location is copied into it
+Cottage::Cottage(const Cottage& other) {
+    location_count = other.location_count;
+    if (location_count > 0) {
+        locations = new Location[location_count];
+        for (int i = 0; i < location_count; i++) {
+            locations[i] = other.locations[i];
+        }
+    } else {
+        locations = 0;
+    }
+}
+
+// deep copy assignment, safe against self assignment
+Cottage& Cottage::operator=(const Cottage& other) {
+    if (this != &other) {
+        delete[] locations;
+        location_count = other.location_count;
+        if (location_count > 0) {
+            locations = new Location[location_count];
+            for (int i = 0; i < location_count; i++) {
+                locations[i] = other.locations[i];
+            }
+        } else {
+            locations = 0;
+        }
+    }
+    return *this;
+}
+
+// deletes the array, the locations inside it go with it
+Cottage::~Cottage() {
+    delete[] locations;
+}
+
+// reads locations.txt, every place gets the letter of the culprit role
+// the old array is only replaced when the whole file was read correctly
+bool Cottage::load(const string& culprit_role) {
+    int index = role_index(culprit_role);
+    if (index < 0) {
+        return false;
+    }
+
+    ifstream file("locations.txt");
+    if (!file) {
+        return false;
+    }
+
+    Location* loaded = new Location[total_locations];
+    string line;
+    getline(file, line);   // header line
+
+    int count = 0;
+    while (count < total_locations && getline(file, line)) {
+        clean_line(line);
+        if (line.empty()) {
+            continue;
+        }
+        string letter = get_field(line, 2 + index);
+        int position = atoi(get_field(line, 1).c_str());
+        if (letter.empty() || position < 1 || position > total_locations) {
+            delete[] loaded;
+            return false;
+        }
+        loaded[count].locName = get_field(line, 0);
+        loaded[count].letterClueLoc = letter[0];
+        loaded[count].boardPosLoc = position;
+        loaded[count].locRow = Word1;
+        loaded[count].locSearchFlag = false;
+        count++;
+    }
+
+    if (count < total_locations) {
+        delete[] loaded;
+        return false;
+    }
+
+    delete[] locations;
+    locations = loaded;
+    location_count = total_locations;
+    return true;
+}
+
+int Cottage::get_location_count() const {
+    return location_count;
+}
+
+// checks that an index points to a real location
+bool Cottage::is_valid_index(int index) const {
+    return index >= 0 && index < location_count;
+}
+
+// the caller must check is_valid_index() first
+bool Cottage::is_searched(int index) const {
+    return locations[index].locSearchFlag;
+}
+
+const Location& Cottage::get_location(int index) const {
+    return locations[index];
+}
+
+// marks the place as searched and hands over its clue
+Clue Cottage::search(int index) {
+    locations[index].locSearchFlag = true;
+    Clue clue = { locations[index].letterClueLoc, locations[index].boardPosLoc, locations[index].locRow };
+    return clue;
+}
+
+// gives the clue of a place again without changing anything
+Clue Cottage::peek(int index) const {
+    Clue clue = { locations[index].letterClueLoc, locations[index].boardPosLoc, locations[index].locRow };
+    return clue;
+}
+
+// shows all places with their search status
+void Cottage::display() const {
+    for (int i = 0; i < location_count; i++) {
+        cout << "[" << (i + 1) << "] " << underscore_to_space(locations[i].locName) << " - "
+             << (locations[i].locSearchFlag ? "Searched" : "NOT searched") << endl;
+    }
+}
+
+// ---------- module 4: scrabble board ----------
+
+// empty board, setup() gives it the real size
+Scrabble::Scrabble() {
+    board = 0;
+    row_size[0] = 0;
+    row_size[1] = 0;
+    word1 = "";
+    word2 = "";
+    solved1 = false;
+    solved2 = false;
+}
+
+// creates the jagged array: an array of two row pointers, each row has its own length
+void Scrabble::allocate_board(int first_size, int second_size) {
+    row_size[0] = first_size;
+    row_size[1] = second_size;
+    board = new Tile*[2];
+    board[0] = new Tile[first_size];
+    board[1] = new Tile[second_size];
+    for (int r = 0; r < 2; r++) {
+        for (int c = 0; c < row_size[r]; c++) {
+            board[r][c].tileLetter = '\0';
+            board[r][c].filled = false;
+        }
+    }
+}
+
+// deletes the rows first and then the array of row pointers
+void Scrabble::free_board() {
+    if (board != 0) {
+        delete[] board[0];
+        delete[] board[1];
+        delete[] board;
+        board = 0;
+    }
+    row_size[0] = 0;
+    row_size[1] = 0;
+}
+
+// deep copy of the whole board
+void Scrabble::copy_from(const Scrabble& other) {
+    if (other.board != 0) {
+        allocate_board(other.row_size[0], other.row_size[1]);
+        for (int r = 0; r < 2; r++) {
+            for (int c = 0; c < row_size[r]; c++) {
+                board[r][c] = other.board[r][c];
+            }
+        }
+    }
+    word1 = other.word1;
+    word2 = other.word2;
+    solved1 = other.solved1;
+    solved2 = other.solved2;
+}
+
+Scrabble::Scrabble(const Scrabble& other) {
+    board = 0;
+    row_size[0] = 0;
+    row_size[1] = 0;
+    copy_from(other);
+}
+
+Scrabble& Scrabble::operator=(const Scrabble& other) {
+    if (this != &other) {
+        free_board();
+        copy_from(other);
+    }
+    return *this;
+}
+
+Scrabble::~Scrabble() {
+    free_board();
+}
+
+// creates fresh empty rows and remembers the two target words from clue.txt
+void Scrabble::setup(const string& first_word, const string& second_word) {
+    free_board();
+    word1 = to_upper(first_word);
+    word2 = to_upper(second_word);
+    allocate_board((int)word1.size(), (int)word2.size());
+    solved1 = false;
+    solved2 = false;
+}
+
+// puts a clue letter at its position, positions start at 1
+int Scrabble::place_tile(const Clue& clue) {
+    if (board == 0) {
+        return board_not_ready;
+    }
+    int row = (clue.clueRow == Word1) ? 0 : 1;
+    if (clue.cluePosition < 1 || clue.cluePosition > row_size[row]) {
+        return invalid_position;
+    }
+    Tile& slot = board[row][clue.cluePosition - 1];
+    if (slot.filled) {
+        return slot_filled;
+    }
+    slot.tileLetter = clue.clueLetter;
+    slot.filled = true;
+    return placed_ok;
+}
+
+// a row is complete when every slot has a letter
+bool Scrabble::is_row_complete(WordRow row) const {
+    if (board == 0) {
+        return false;
+    }
+    int r = (row == Word1) ? 0 : 1;
+    for (int c = 0; c < row_size[r]; c++) {
+        if (!board[r][c].filled) {
+            return false;
+        }
+    }
+    return row_size[r] > 0;
+}
+
+bool Scrabble::is_row_solved(WordRow row) const {
+    return (row == Word1) ? solved1 : solved2;
+}
+
+bool Scrabble::both_solved() const {
+    return solved1 && solved2;
+}
+
+// compares the typed word with the real word, true means correct
+// module 7 turns a wrong word into an exception
+bool Scrabble::check_word(WordRow row, const string& typed) {
+    if (!is_row_complete(row) || is_row_solved(row)) {
+        return false;
+    }
+    string target = (row == Word1) ? word1 : word2;
+    if (to_upper(typed) != target) {
+        return false;
+    }
+    if (row == Word1) {
+        solved1 = true;
+    } else {
+        solved2 = true;
+    }
+    return true;
+}
+
+string Scrabble::get_word(WordRow row) const {
+    return (row == Word1) ? word1 : word2;
+}
+
+// prints both rows, a filled slot shows its letter
+void Scrabble::display() const {
+    cout << "Scrabble:" << endl;
+    for (int r = 0; r < 2; r++) {
+        cout << "  Word " << (r + 1) << ": ";
+        for (int c = 0; c < row_size[r]; c++) {
+            if (board != 0 && board[r][c].filled) {
+                cout << "[" << board[r][c].tileLetter << "] ";
+            } else {
+                cout << "[ ] ";
+            }
+        }
+        WordRow current = (r == 0) ? Word1 : Word2;
+        if (is_row_solved(current)) {
+            cout << " -> SOLVED";
+        } else if (is_row_complete(current)) {
+            cout << " -> COMPLETE";
+        }
+        cout << endl;
+    }
+}
+
 // ---------- game engine ----------
 
 // sets default values and seeds the random number generator
@@ -246,6 +619,7 @@ GameEngine::GameEngine() {
     wrong_word_penalty = default_wrong_word;
     characters = 0;
     culprit = 0;
+    culprit_role = "";
     srand((unsigned int)time(0));
 }
 
@@ -266,34 +640,6 @@ void GameEngine::free_characters() {
     culprit = 0;
 }
 
-// removes the hidden carriage return that windows files can leave at the end
-void GameEngine::clean_line(string& line) {
-    if (!line.empty() && line[line.size() - 1] == '\r') {
-        line.erase(line.size() - 1);
-    }
-}
-
-// returns the field at the given index from a line separated by |
-string GameEngine::get_field(const string& line, int index) {
-    int current = 0;
-    string field = "";
-    for (int i = 0; i < (int)line.size(); i++) {
-        if (line[i] == '|') {
-            if (current == index) {
-                return field;
-            }
-            current++;
-            field = "";
-        } else {
-            field = field + line[i];
-        }
-    }
-    if (current == index) {
-        return field;
-    }
-    return "";
-}
-
 // checks if the text contains a space
 bool GameEngine::has_space(const string& text) {
     for (int i = 0; i < (int)text.size(); i++) {
@@ -302,26 +648,6 @@ bool GameEngine::has_space(const string& text) {
         }
     }
     return false;
-}
-
-// finds which column of characters.txt holds the letters for the culprit role
-int GameEngine::column_for_role(const string& role) {
-    if (role == "Cook") {
-        return 4;
-    } else if (role == "Guard") {
-        return 5;
-    } else if (role == "Servant") {
-        return 6;
-    } else if (role == "Partner 1") {
-        return 7;
-    } else if (role == "Partner 2") {
-        return 8;
-    } else if (role == "PA") {
-        return 9;
-    } else if (role == "Child") {
-        return 10;
-    }
-    return -1;
 }
 
 // builds the right character object for a role, returns 0 for an unknown role
@@ -346,9 +672,14 @@ Character* GameEngine::create_character(const string& role, const string& name,
 }
 
 // reads one line and converts it to a number, returns -1 for invalid input
-int GameEngine::read_number() const {
+// when the input ends the game exits, so a piped test cannot loop forever
+int GameEngine::read_number() {
     string input;
-    getline(cin, input);
+    if (!getline(cin, input)) {
+        state = Exit;
+        return 0;
+    }
+    clean_line(input);
     if (input.empty() || input.size() > 5) {
         return -1;
     }
@@ -477,7 +808,6 @@ bool GameEngine::load_characters() {
 
     string lines[total_characters];
     string line;
-
     getline(file, line);   // header line
 
     int count = 0;
@@ -489,7 +819,6 @@ bool GameEngine::load_characters() {
         lines[count] = line;
         count++;
     }
-
     if (count < total_characters) {
         cout << "Characters.txt is corrupt, it needs " << total_characters << " people" << endl;
         return false;
@@ -497,11 +826,12 @@ bool GameEngine::load_characters() {
 
     // line 0 is the victim, so the culprit is one of the seven suspects after it
     int pick = 1 + rand() % total_suspects;
-    int column = column_for_role(get_field(lines[pick], 1));
-    if (column < 0) {
+    int index = role_index(get_field(lines[pick], 1));
+    if (index < 0) {
         cout << "Characters.txt is corrupt, a role is not recognised" << endl;
         return false;
     }
+    int column = 4 + index;
 
     characters = new Character*[total_characters];
     for (int i = 0; i < total_characters; i++) {
@@ -531,7 +861,81 @@ bool GameEngine::load_characters() {
 
     characters[pick]->set_culprit(true);
     culprit = characters[pick];
+    culprit_role = culprit->get_role();
     return true;
+}
+
+// reads the two words of the culprit role from clue.txt
+bool GameEngine::load_clue_words(string& first_word, string& second_word) const {
+    ifstream file("clue.txt");
+    if (!file) {
+        cout << "Clue.txt could not be found" << endl;
+        return false;
+    }
+
+    string line;
+    getline(file, line);   // header line
+    while (getline(file, line)) {
+        clean_line(line);
+        if (get_field(line, 0) == culprit_role) {
+            first_word = get_field(line, 1);
+            second_word = get_field(line, 2);
+            if (first_word.size() != 7 || second_word.size() != 8) {
+                cout << "Clue.txt is corrupt, word 1 needs 7 letters and word 2 needs 8" << endl;
+                return false;
+            }
+            return true;
+        }
+    }
+    cout << "Clue.txt is corrupt, the culprit role was not found" << endl;
+    return false;
+}
+
+// temporary test: visit locations, collect letters and place them on the board
+// the real version comes with the game menu in module 13
+void GameEngine::test_visit_locations() {
+    while (state != Exit) {
+        cout << endl;
+        cout << "====== Location menu (temporary test) ======" << endl;
+        cottage.display();
+        cout << "[0] Back" << endl;
+        cout << "Pick: ";
+
+        int pick = read_number();
+        if (pick == 0) {
+            return;
+        }
+        if (!cottage.is_valid_index(pick - 1)) {
+            cout << "Invalid choice, please pick a number from the list" << endl;
+            continue;
+        }
+
+        int index = pick - 1;
+        if (cottage.is_searched(index)) {
+            cout << "You have already searched this place. Search again? (Y/N): ";
+            string answer;
+            getline(cin, answer);
+            if (answer == "Y" || answer == "y") {
+                Clue again = cottage.peek(index);
+                cout << "Letter " << again.clueLetter << " is at position " << again.cluePosition
+                     << " of Word 1" << endl;
+            }
+            continue;
+        }
+
+        Clue clue = cottage.search(index);
+        cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
+             << " of Word 1." << endl;
+        int result = scrabble.place_tile(clue);
+        if (result == Scrabble::placed_ok) {
+            cout << "Letter has been placed." << endl;
+        } else if (result == Scrabble::slot_filled) {
+            cout << "That board slot already has a letter" << endl;
+        } else {
+            cout << "The letter could not be placed" << endl;
+        }
+        scrabble.display();
+    }
 }
 
 // asks for the detective name and prepares a fresh game
@@ -539,7 +943,11 @@ void GameEngine::start_new_game() {
     string name = "";
     while (true) {
         cout << "Enter detective name: ";
-        getline(cin, name);
+        if (!getline(cin, name)) {
+            state = Exit;
+            return;
+        }
+        clean_line(name);
         if (name.empty()) {
             cout << "The name cannot be empty" << endl;
         } else if (has_space(name)) {
@@ -555,6 +963,18 @@ void GameEngine::start_new_game() {
         return;
     }
 
+    string first_word;
+    string second_word;
+    if (!load_clue_words(first_word, second_word)) {
+        cout << "The game cannot start without the clue words" << endl;
+        return;
+    }
+    if (!cottage.load(culprit_role)) {
+        cout << "Locations.txt is missing or corrupt, the game cannot start" << endl;
+        return;
+    }
+    scrabble.setup(first_word, second_word);
+
     detective = Detective(name, starting_credibility);
     state = Playing;
 
@@ -562,9 +982,15 @@ void GameEngine::start_new_game() {
     cout << "Credibility: " << detective.get_credibility()
          << " | Turns used: " << detective.get_turns() << endl;
     show_characters();
+    cout << endl;
+    scrabble.display();
+
+    test_visit_locations();
 
     // the game menu is added in module 13, so go back to the main menu for now
-    state = Menu;
+    if (state != Exit) {
+        state = Menu;
+    }
 }
 
 // main loop of the program
@@ -592,7 +1018,9 @@ void GameEngine::run() {
             state = Exit;
             break;
         default:
-            cout << "Invalid choice, please enter a number from 1 to 5" << endl;
+            if (state != Exit) {
+                cout << "Invalid choice, please enter a number from 1 to 5" << endl;
+            }
         }
     }
 }
