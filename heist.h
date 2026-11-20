@@ -1,4 +1,9 @@
 #pragma once
+// lets visual studio accept time and file functions without the unsafe warnings
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -6,7 +11,7 @@
 #include <ctime>
 using namespace std;
 
-// enumerations
+// ---------- enumerations ----------
 
 // tells which of the two scrabble rows a letter belongs to
 enum WordRow { Word1, Word2 };
@@ -17,7 +22,7 @@ enum GameState { Menu, Playing, Won, Lost, Exit };
 // options of the main menu
 enum MenuChoice { NewGame = 1, LeaderBoard, About, Rules, ExitGame };
 
-// structures
+// ---------- structures ----------
 
 // one slot of the scrabble board
 struct Tile {
@@ -40,6 +45,16 @@ struct Location {
     WordRow locRow;        // always Word1 for locations
     bool locSearchFlag;    // true once the detective has searched it
 };
+
+// ---------- helper functions ----------
+
+void clean_line(string& line);
+string get_field(const string& line, int index);
+string to_upper(const string& text);
+string underscore_to_space(const string& text);
+int role_index(const string& role);
+
+// ---------- characters ----------
 
 // base class of every person in the game
 // it is abstract: display() and required_credibility() are pure virtual
@@ -187,6 +202,74 @@ public:
     virtual void display() const;
 };
 
+// ---------- module 4: game boards (dynamic memory) ----------
+
+// the seven places of the cottage, stored in a dynamically allocated array
+// aggregation: the cottage uses an array of location structs
+class Cottage {
+private:
+    static const int total_locations = 7;
+    Location* locations;
+    int location_count;
+
+public:
+    Cottage();
+    Cottage(const Cottage& other);
+    Cottage& operator=(const Cottage& other);
+    ~Cottage();
+
+    // reads locations.txt, returns false if the file is missing or corrupt
+    // module 7 turns this failure into an exception
+    bool load(const string& culprit_role);
+
+    int get_location_count() const;
+    bool is_valid_index(int index) const;
+    bool is_searched(int index) const;
+    const Location& get_location(int index) const;
+    Clue search(int index);
+    Clue peek(int index) const;
+    void display() const;
+};
+
+// the scrabble board: a jagged array, row 1 has 7 slots and row 2 has 8 slots
+class Scrabble {
+public:
+    // results of place_tile(), module 7 turns these into exceptions
+    static const int placed_ok = 0;
+    static const int invalid_position = 1;
+    static const int slot_filled = 2;
+    static const int board_not_ready = 3;
+
+private:
+    Tile** board;
+    int row_size[2];
+    string word1;
+    string word2;
+    bool solved1;
+    bool solved2;
+
+    void allocate_board(int first_size, int second_size);
+    void free_board();
+    void copy_from(const Scrabble& other);
+
+public:
+    Scrabble();
+    Scrabble(const Scrabble& other);
+    Scrabble& operator=(const Scrabble& other);
+    ~Scrabble();
+
+    void setup(const string& first_word, const string& second_word);
+    int place_tile(const Clue& clue);
+    bool is_row_complete(WordRow row) const;
+    bool is_row_solved(WordRow row) const;
+    bool both_solved() const;
+    bool check_word(WordRow row, const string& typed);
+    string get_word(WordRow row) const;
+    void display() const;
+};
+
+// ---------- game engine ----------
+
 // runs the whole game: menus, loading files and starting a new game
 class GameEngine {
 private:
@@ -201,6 +284,8 @@ private:
 
     GameState state;
     Detective detective;
+    Cottage cottage;
+    Scrabble scrabble;
 
     // values read from rules.txt
     int max_turns;
@@ -211,19 +296,16 @@ private:
     // dynamic array of the eight people, the engine owns and deletes them
     Character** characters;
     Character* culprit;
+    string culprit_role;
 
     // the engine owns raw pointers, so copying it is not allowed
     GameEngine(const GameEngine& other);
     GameEngine& operator=(const GameEngine& other);
 
-    // helper functions for reading files and input
-    static void clean_line(string& line);
-    static string get_field(const string& line, int index);
     static bool has_space(const string& text);
-    static int column_for_role(const string& role);
     static Character* create_character(const string& role, const string& name,
                                        const string& nation, char letter, int position);
-    int read_number() const;
+    int read_number();
 
     void show_title() const;
     void show_main_menu() const;
@@ -233,8 +315,12 @@ private:
 
     void load_rules();
     bool load_characters();
+    bool load_clue_words(string& first_word, string& second_word) const;
     void free_characters();
     void start_new_game();
+
+    // temporary test of module 4, module 13 replaces it with the real game menu
+    void test_visit_locations();
 
 public:
     GameEngine();
