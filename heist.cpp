@@ -608,6 +608,140 @@ void Scrabble::display() const {
     }
 }
 
+// ---------- tile rack ----------
+
+// empty rack with no space
+TileRack::TileRack() {
+    tiles = 0;
+    capacity = 0;
+    count = 0;
+}
+
+// rack with room for the given number of tiles, every slot starts empty
+TileRack::TileRack(int size) {
+    count = 0;
+    if (size > 0) {
+        capacity = size;
+        tiles = new Tile[capacity];
+        for (int i = 0; i < capacity; i++) {
+            tiles[i].tileLetter = '\0';
+            tiles[i].filled = false;
+        }
+    } else {
+        capacity = 0;
+        tiles = 0;
+    }
+}
+
+// copies the size, the count and every tile into new memory
+void TileRack::copy_from(const TileRack& other) {
+    capacity = other.capacity;
+    count = other.count;
+    if (capacity > 0) {
+        tiles = new Tile[capacity];
+        for (int i = 0; i < capacity; i++) {
+            tiles[i] = other.tiles[i];
+        }
+    } else {
+        tiles = 0;
+    }
+}
+
+// deep copy: the new rack gets its own memory
+TileRack::TileRack(const TileRack& other) {
+    copy_from(other);
+}
+
+TileRack& TileRack::operator=(const TileRack& other) {
+    if (this != &other) {
+        delete[] tiles;
+        copy_from(other);
+    }
+    return *this;
+}
+
+TileRack::~TileRack() {
+    delete[] tiles;
+}
+
+// stores a letter in the next free slot, false when the rack is full
+bool TileRack::add_tile(char letter) {
+    if (is_full()) {
+        return false;
+    }
+    tiles[count].tileLetter = letter;
+    tiles[count].filled = true;
+    count++;
+    return true;
+}
+
+// takes a letter out and shifts the rest to the left
+bool TileRack::remove_tile(int index, char& letter) {
+    if (index < 0 || index >= count) {
+        return false;
+    }
+    letter = tiles[index].tileLetter;
+    for (int i = index; i < count - 1; i++) {
+        tiles[i] = tiles[i + 1];
+    }
+    tiles[count - 1].tileLetter = '\0';
+    tiles[count - 1].filled = false;
+    count--;
+    return true;
+}
+
+int TileRack::get_count() const {
+    return count;
+}
+
+int TileRack::get_capacity() const {
+    return capacity;
+}
+
+bool TileRack::is_full() const {
+    return count == capacity;
+}
+
+bool TileRack::is_empty() const {
+    return count == 0;
+}
+
+void TileRack::clear() {
+    for (int i = 0; i < capacity; i++) {
+        tiles[i].tileLetter = '\0';
+        tiles[i].filled = false;
+    }
+    count = 0;
+}
+
+// shows the letters in the order they were collected
+void TileRack::display() const {
+    if (count == 0) {
+        cout << "(empty)";
+        return;
+    }
+    for (int i = 0; i < count; i++) {
+        if (tiles[i].tileLetter == ' ') {
+            cout << "  ";
+        } else {
+            cout << tiles[i].tileLetter << " ";
+        }
+    }
+}
+
+// joins this rack, a space tile and the other rack into a new rack
+TileRack TileRack::operator+(const TileRack& other) const {
+    TileRack merged(capacity + other.capacity + 1);
+    for (int i = 0; i < count; i++) {
+        merged.add_tile(tiles[i].tileLetter);
+    }
+    merged.add_tile(' ');
+    for (int i = 0; i < other.count; i++) {
+        merged.add_tile(other.tiles[i].tileLetter);
+    }
+    return merged;
+}
+
 // ---------- game engine ----------
 
 // sets default values and seeds the random number generator
@@ -620,6 +754,9 @@ GameEngine::GameEngine() {
     characters = 0;
     culprit = 0;
     culprit_role = "";
+    for (int i = 0; i < total_characters; i++) {
+        interviewed[i] = false;
+    }
     srand((unsigned int)time(0));
 }
 
@@ -891,6 +1028,71 @@ bool GameEngine::load_clue_words(string& first_word, string& second_word) const 
     return false;
 }
 
+// shows both racks merged into one clue, using the + operator of the rack
+void GameEngine::show_rack() const {
+    cout << "Rack: ";
+    if (rack_word1.is_empty() && rack_word2.is_empty()) {
+        cout << "(empty)" << endl;
+        return;
+    }
+    TileRack merged = rack_word1 + rack_word2;
+    merged.display();
+    cout << endl;
+}
+
+// temporary test: interview people and collect letters for word 2
+// the credibility rule is only shown here, module 13 charges the penalties
+void GameEngine::test_interview_people() {
+    while (state != Exit) {
+        cout << endl;
+        cout << "====== Character menu (temporary test) ======" << endl;
+        for (int i = 0; i < total_characters; i++) {
+            cout << "[" << (i + 1) << "] " << characters[i]->get_name() << " ("
+                 << characters[i]->get_role() << ") - "
+                 << (interviewed[i] ? "Interviewed" : "NOT interviewed") << endl;
+        }
+        cout << "[0] Back" << endl;
+        cout << "Pick: ";
+
+        int pick = read_number();
+        if (pick == 0) {
+            return;
+        }
+        if (pick < 1 || pick > total_characters) {
+            cout << "Invalid choice, please pick a number from the list" << endl;
+            continue;
+        }
+
+        int index = pick - 1;
+        Character* person = characters[index];
+        if (interviewed[index]) {
+            cout << "You have already interviewed " << person->get_name() << endl;
+            continue;
+        }
+
+        // polymorphism: each character type knows its own required credibility
+        if (detective.get_credibility() < person->required_credibility()) {
+            cout << person->get_name() << " will only talk to a detective with at least "
+                 << person->required_credibility() << " credibility" << endl;
+            continue;
+        }
+
+        Clue clue = { person->get_letter(), person->get_position(), person->get_row() };
+        int result = scrabble.place_tile(clue);
+        if (result != Scrabble::placed_ok) {
+            cout << "The letter could not be placed" << endl;
+            continue;
+        }
+        rack_word2.add_tile(clue.clueLetter);
+        interviewed[index] = true;
+        cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
+             << " of Word 2." << endl;
+        cout << "Letter has been placed." << endl;
+        show_rack();
+        scrabble.display();
+    }
+}
+
 // temporary test: visit locations, collect letters and place them on the board
 // the real version comes with the game menu in module 13
 void GameEngine::test_visit_locations() {
@@ -928,12 +1130,14 @@ void GameEngine::test_visit_locations() {
              << " of Word 1." << endl;
         int result = scrabble.place_tile(clue);
         if (result == Scrabble::placed_ok) {
+            rack_word1.add_tile(clue.clueLetter);
             cout << "Letter has been placed." << endl;
         } else if (result == Scrabble::slot_filled) {
             cout << "That board slot already has a letter" << endl;
         } else {
             cout << "The letter could not be placed" << endl;
         }
+        show_rack();
         scrabble.display();
     }
 }
@@ -976,6 +1180,11 @@ void GameEngine::start_new_game() {
     scrabble.setup(first_word, second_word);
 
     detective = Detective(name, starting_credibility);
+    rack_word1 = TileRack(7);
+    rack_word2 = TileRack(8);
+    for (int i = 0; i < total_characters; i++) {
+        interviewed[i] = false;
+    }
     state = Playing;
 
     cout << "A culprit has been secretly chosen. The game begins!" << endl;
@@ -985,7 +1194,29 @@ void GameEngine::start_new_game() {
     cout << endl;
     scrabble.display();
 
-    test_visit_locations();
+    // temporary menu of modules 4 and 5, module 13 replaces it with the real game menu
+    while (state != Exit) {
+        cout << endl;
+        cout << "---- Temporary test menu ----" << endl;
+        show_rack();
+        cout << "[1] Visit a location" << endl;
+        cout << "[2] Interview a person" << endl;
+        cout << "[3] View scrabble board" << endl;
+        cout << "[0] Back to main menu" << endl;
+        cout << "Choice: ";
+        int test_choice = read_number();
+        if (test_choice == 0) {
+            break;
+        } else if (test_choice == 1) {
+            test_visit_locations();
+        } else if (test_choice == 2) {
+            test_interview_people();
+        } else if (test_choice == 3) {
+            scrabble.display();
+        } else if (state != Exit) {
+            cout << "Invalid choice, please enter a number from 0 to 3" << endl;
+        }
+    }
 
     // the game menu is added in module 13, so go back to the main menu for now
     if (state != Exit) {

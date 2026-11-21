@@ -202,6 +202,39 @@ public:
     virtual void display() const;
 };
 
+// ---------- module 5: tile rack (dynamic memory) ----------
+
+// holds the letters the detective has collected, stored in a dynamically allocated array
+class TileRack {
+private:
+    Tile* tiles;
+    int capacity;
+    int count;
+
+    void copy_from(const TileRack& other);
+
+public:
+    TileRack();
+    TileRack(int size);
+    TileRack(const TileRack& other);
+    TileRack& operator=(const TileRack& other);
+    ~TileRack();
+
+    // return false when the rack is full or the index is wrong
+    // module 7 turns these failures into exceptions
+    bool add_tile(char letter);
+    bool remove_tile(int index, char& letter);
+    int get_count() const;
+    int get_capacity() const;
+    bool is_full() const;
+    bool is_empty() const;
+    void clear();
+    void display() const;
+
+    // merges two racks into one with a space tile between them
+    TileRack operator+(const TileRack& other) const;
+};
+
 // ---------- module 4: game boards (dynamic memory) ----------
 
 // the seven places of the cottage, stored in a dynamically allocated array
@@ -286,6 +319,9 @@ private:
     Detective detective;
     Cottage cottage;
     Scrabble scrabble;
+    TileRack rack_word1;
+    TileRack rack_word2;
+    bool interviewed[total_characters];
 
     // values read from rules.txt
     int max_turns;
@@ -319,8 +355,10 @@ private:
     void free_characters();
     void start_new_game();
 
-    // temporary test of module 4, module 13 replaces it with the real game menu
+    // temporary tests of modules 4 and 5, module 13 replaces them with the real game menu
+    void show_rack() const;
     void test_visit_locations();
+    void test_interview_people();
 
 public:
     GameEngine();
