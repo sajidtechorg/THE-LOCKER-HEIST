@@ -309,6 +309,7 @@ void Child::display() const {
          << " - Panicked teenage child of the owner" << endl;
 }
 
+/* old module 4 version of Cottage (raw pointer), kept for reference
 // ---------- module 4: cottage ----------
 
 // empty cottage, load() fills it
@@ -449,7 +450,126 @@ void Cottage::display() const {
              << (locations[i].locSearchFlag ? "Searched" : "NOT searched") << endl;
     }
 }
+*/
 
+// ---------- cottage (module 8, uses DynamicArray) ----------
+
+Cottage::Cottage() : locations(0) {
+}
+
+// deep copy: the DynamicArray copies its own memory
+Cottage::Cottage(const Cottage& other) : locations(other.locations) {
+}
+
+Cottage& Cottage::operator=(const Cottage& other) {
+    if (this != &other) {
+        locations = other.locations;
+    }
+    return *this;
+}
+
+// nothing to delete here, the DynamicArray frees its own memory
+Cottage::~Cottage() {
+}
+
+// reads locations.txt, every place gets the letter of the culprit role
+// the old array is only replaced when the whole file was read correctly
+void Cottage::load(const string& culprit_role) {
+    int index = role_index(culprit_role);
+    if (index < 0) {
+        throw FileException("The culprit role is not known");
+    }
+
+    ifstream file("locations.txt");
+    if (!file) {
+        throw FileException("Locations.txt could not be found");
+    }
+
+    DynamicArray<Location> loaded(total_locations);
+    string line;
+    getline(file, line);   // header line
+
+    int count = 0;
+    while (count < total_locations && getline(file, line)) {
+        clean_line(line);
+        if (line.empty()) {
+            continue;
+        }
+        string letter = get_field(line, 2 + index);
+        int position = atoi(get_field(line, 1).c_str());
+        if (letter.empty() || position < 1 || position > total_locations) {
+            throw FileException("Locations.txt is corrupt, a letter or position is wrong");
+        }
+        Location place;
+        place.locName = get_field(line, 0);
+        place.letterClueLoc = letter[0];
+        place.boardPosLoc = position;
+        place.locRow = Word1;
+        place.locSearchFlag = false;
+        loaded[count] = place;
+        count++;
+    }
+
+    if (count < total_locations) {
+        throw FileException("Locations.txt is corrupt, it needs 7 places");
+    }
+    locations = loaded;
+}
+
+int Cottage::get_location_count() const {
+    return locations.size();
+}
+
+// checks that an index points to a real location
+bool Cottage::is_valid_index(int index) const {
+    return index >= 0 && index < locations.size();
+}
+
+// the next four functions throw an InvalidPositionException for a wrong index
+bool Cottage::is_searched(int index) const {
+    if (!is_valid_index(index)) {
+        throw InvalidPositionException("There is no such location");
+    }
+    return locations[index].locSearchFlag;
+}
+
+const Location& Cottage::get_location(int index) const {
+    if (!is_valid_index(index)) {
+        throw InvalidPositionException("There is no such location");
+    }
+    return locations[index];
+}
+
+// marks the place as searched and hands over its clue
+Clue Cottage::search(int index) {
+    if (!is_valid_index(index)) {
+        throw InvalidPositionException("There is no such location");
+    }
+    Location& place = locations[index];
+    place.locSearchFlag = true;
+    Clue clue = { place.letterClueLoc, place.boardPosLoc, place.locRow };
+    return clue;
+}
+
+// gives the clue of a place again without changing anything
+Clue Cottage::peek(int index) const {
+    if (!is_valid_index(index)) {
+        throw InvalidPositionException("There is no such location");
+    }
+    const Location& place = locations[index];
+    Clue clue = { place.letterClueLoc, place.boardPosLoc, place.locRow };
+    return clue;
+}
+
+// shows all places with their search status
+void Cottage::display() const {
+    for (int i = 0; i < locations.size(); i++) {
+        cout << "[" << (i + 1) << "] " << underscore_to_space(locations[i].locName) << " - "
+             << (locations[i].locSearchFlag ? "Searched" : "NOT searched") << endl;
+    }
+}
+
+/* old module 4 version of Scrabble (jagged array), kept for reference
 // ---------- module 4: scrabble board ----------
 
 // empty board, setup() gives it the real size
@@ -618,7 +738,134 @@ void Scrabble::display() const {
         cout << endl;
     }
 }
+*/
 
+// ---------- scrabble board (module 8, uses DynamicArray) ----------
+
+// empty board, setup() gives it the real size
+Scrabble::Scrabble() : row1(0), row2(0) {
+    word1 = "";
+    word2 = "";
+    solved1 = false;
+    solved2 = false;
+}
+
+// deep copy of both rows
+Scrabble::Scrabble(const Scrabble& other) : row1(other.row1), row2(other.row2) {
+    word1 = other.word1;
+    word2 = other.word2;
+    solved1 = other.solved1;
+    solved2 = other.solved2;
+}
+
+Scrabble& Scrabble::operator=(const Scrabble& other) {
+    if (this != &other) {
+        row1 = other.row1;
+        row2 = other.row2;
+        word1 = other.word1;
+        word2 = other.word2;
+        solved1 = other.solved1;
+        solved2 = other.solved2;
+    }
+    return *this;
+}
+
+Scrabble::~Scrabble() {
+}
+
+// creates fresh empty rows and remembers the two target words from clue.txt
+void Scrabble::setup(const string& first_word, const string& second_word) {
+    word1 = to_upper(first_word);
+    word2 = to_upper(second_word);
+    row1 = DynamicArray<Tile>((int)word1.size());
+    row2 = DynamicArray<Tile>((int)word2.size());
+    solved1 = false;
+    solved2 = false;
+}
+
+// puts a clue letter at its position, positions start at 1
+void Scrabble::place_tile(const Clue& clue) {
+    DynamicArray<Tile>& row = (clue.clueRow == Word1) ? row1 : row2;
+    if (clue.cluePosition < 1 || clue.cluePosition > row.size()) {
+        throw InvalidPositionException("That board position does not exist");
+    }
+    Tile& slot = row[clue.cluePosition - 1];
+    if (slot.filled) {
+        throw SlotFilledException("That board slot already has a letter");
+    }
+    slot.tileLetter = clue.clueLetter;
+    slot.filled = true;
+}
+
+// a row is complete when every slot has a letter
+bool Scrabble::is_row_complete(WordRow row) const {
+    const DynamicArray<Tile>& tiles = (row == Word1) ? row1 : row2;
+    if (tiles.size() == 0) {
+        return false;
+    }
+    for (int i = 0; i < tiles.size(); i++) {
+        if (!tiles[i].filled) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Scrabble::is_row_solved(WordRow row) const {
+    return (row == Word1) ? solved1 : solved2;
+}
+
+bool Scrabble::both_solved() const {
+    return solved1 && solved2;
+}
+
+// compares the typed word with the real word, a wrong word throws an exception
+void Scrabble::check_word(WordRow row, const string& typed) {
+    if (!is_row_complete(row)) {
+        throw ActionNotAllowedException("That row is not complete yet");
+    }
+    if (is_row_solved(row)) {
+        throw InvalidInputException("That word is already solved");
+    }
+    string target = (row == Word1) ? word1 : word2;
+    if (to_upper(typed) != target) {
+        throw InvalidWordException("That is not the right word");
+    }
+    if (row == Word1) {
+        solved1 = true;
+    } else {
+        solved2 = true;
+    }
+}
+
+string Scrabble::get_word(WordRow row) const {
+    return (row == Word1) ? word1 : word2;
+}
+
+// prints both rows, a filled slot shows its letter
+void Scrabble::display() const {
+    cout << "Scrabble:" << endl;
+    for (int r = 0; r < 2; r++) {
+        const DynamicArray<Tile>& tiles = (r == 0) ? row1 : row2;
+        cout << "  Word " << (r + 1) << ": ";
+        for (int i = 0; i < tiles.size(); i++) {
+            if (tiles[i].filled) {
+                cout << "[" << tiles[i].tileLetter << "] ";
+            } else {
+                cout << "[ ] ";
+            }
+        }
+        WordRow current = (r == 0) ? Word1 : Word2;
+        if (is_row_solved(current)) {
+            cout << " -> SOLVED";
+        } else if (is_row_complete(current)) {
+            cout << " -> COMPLETE";
+        }
+        cout << endl;
+    }
+}
+
+/* old module 5 version of TileRack (raw pointer), kept for reference
 // ---------- tile rack ----------
 
 // empty rack with no space
@@ -745,6 +992,115 @@ void TileRack::display() const {
 // joins this rack, a space tile and the other rack into a new rack
 TileRack TileRack::operator+(const TileRack& other) const {
     TileRack merged(capacity + other.capacity + 1);
+    for (int i = 0; i < count; i++) {
+        merged.add_tile(tiles[i].tileLetter);
+    }
+    merged.add_tile(' ');
+    for (int i = 0; i < other.count; i++) {
+        merged.add_tile(other.tiles[i].tileLetter);
+    }
+    return merged;
+}
+*/
+
+// ---------- tile rack (module 8, uses DynamicArray) ----------
+
+// empty rack with no space
+TileRack::TileRack() : tiles(0) {
+    count = 0;
+}
+
+// rack with room for the given number of tiles
+TileRack::TileRack(int capacity) : tiles(capacity) {
+    count = 0;
+}
+
+// deep copy, the dynamic array copies its own memory
+TileRack::TileRack(const TileRack& other) : tiles(other.tiles) {
+    count = other.count;
+}
+
+TileRack& TileRack::operator=(const TileRack& other) {
+    if (this != &other) {
+        tiles = other.tiles;
+        count = other.count;
+    }
+    return *this;
+}
+
+TileRack::~TileRack() {
+}
+
+// stores a letter in the next free slot
+void TileRack::add_tile(char letter) {
+    if (is_full()) {
+        throw RackFullException("The rack is full");
+    }
+    tiles[count].tileLetter = letter;
+    tiles[count].filled = true;
+    count++;
+}
+
+// takes a letter out and shifts the rest to the left
+char TileRack::remove_tile(int index) {
+    if (is_empty()) {
+        throw RackEmptyException("The rack is empty");
+    }
+    if (index < 0 || index >= count) {
+        throw InvalidPositionException("There is no tile at that place in the rack");
+    }
+    char letter = tiles[index].tileLetter;
+    for (int i = index; i < count - 1; i++) {
+        tiles[i] = tiles[i + 1];
+    }
+    tiles[count - 1].tileLetter = '\0';
+    tiles[count - 1].filled = false;
+    count--;
+    return letter;
+}
+
+int TileRack::get_count() const {
+    return count;
+}
+
+int TileRack::get_capacity() const {
+    return tiles.size();
+}
+
+bool TileRack::is_full() const {
+    return count == tiles.size();
+}
+
+bool TileRack::is_empty() const {
+    return count == 0;
+}
+
+void TileRack::clear() {
+    for (int i = 0; i < tiles.size(); i++) {
+        tiles[i].tileLetter = '\0';
+        tiles[i].filled = false;
+    }
+    count = 0;
+}
+
+// shows the letters in the order they were collected
+void TileRack::display() const {
+    if (count == 0) {
+        cout << "(empty)";
+        return;
+    }
+    for (int i = 0; i < count; i++) {
+        if (tiles[i].tileLetter == ' ') {
+            cout << "  ";
+        } else {
+            cout << tiles[i].tileLetter << " ";
+        }
+    }
+}
+
+// joins this rack, a space tile and the other rack into a new rack
+TileRack TileRack::operator+(const TileRack& other) const {
+    TileRack merged(tiles.size() + other.tiles.size() + 1);
     for (int i = 0; i < count; i++) {
         merged.add_tile(tiles[i].tileLetter);
     }

@@ -116,6 +116,88 @@ public:
     }
 };
 
+// ---------- module 8: template ----------
+
+// generic dynamic array used by cottage, scrabble and tile rack
+// it owns its memory and makes deep copies, so those classes no longer need new and delete
+template <class T>
+class DynamicArray {
+private:
+    T* data;
+    int length;
+
+public:
+    // empty array
+    DynamicArray() {
+        data = 0;
+        length = 0;
+    }
+
+    // array with the given number of slots, all values start at zero
+    DynamicArray(int size) {
+        length = size;
+        if (size > 0) {
+            data = new T[size]();
+        } else {
+            data = 0;
+            length = 0;
+        }
+    }
+
+    // deep copy: a new block of memory is created and every element is copied
+    DynamicArray(const DynamicArray<T>& other) {
+        length = other.length;
+        if (length > 0) {
+            data = new T[length];
+            for (int i = 0; i < length; i++) {
+                data[i] = other.data[i];
+            }
+        } else {
+            data = 0;
+        }
+    }
+
+    // deep copy assignment, safe against self assignment
+    DynamicArray<T>& operator=(const DynamicArray<T>& other) {
+        if (this != &other) {
+            delete[] data;
+            length = other.length;
+            if (length > 0) {
+                data = new T[length];
+                for (int i = 0; i < length; i++) {
+                    data[i] = other.data[i];
+                }
+            } else {
+                data = 0;
+            }
+        }
+        return *this;
+    }
+
+    ~DynamicArray() {
+        delete[] data;
+    }
+
+    int size() const {
+        return length;
+    }
+
+    // access with a range check
+    T& operator[](int index) {
+        if (index < 0 || index >= length) {
+            throw InvalidPositionException("Array index is out of range");
+        }
+        return data[index];
+    }
+
+    const T& operator[](int index) const {
+        if (index < 0 || index >= length) {
+            throw InvalidPositionException("Array index is out of range");
+        }
+        return data[index];
+    }
+};
+
 // ---------- structures ----------
 
 // one slot of the scrabble board
@@ -298,6 +380,7 @@ public:
 
 // ---------- module 5: tile rack (dynamic memory) ----------
 
+/* ---------- old module 5 version of TileRack (raw pointer), kept for reference ----------
 // holds the letters the detective has collected, stored in a dynamically allocated array
 class TileRack {
 private:
@@ -328,9 +411,40 @@ public:
     // merges two racks into one with a space tile between them
     TileRack operator+(const TileRack& other) const;
 };
+*/
+
+// holds the letters the detective has collected
+// module 8: the tiles now live in a DynamicArray, so no raw pointer is needed
+class TileRack {
+private:
+    DynamicArray<Tile> tiles;
+    int count;
+
+public:
+    TileRack();
+    TileRack(int capacity);
+    TileRack(const TileRack& other);
+    TileRack& operator=(const TileRack& other);
+    ~TileRack();
+
+    // add_tile throws RackFullException, remove_tile throws RackEmptyException
+    // or InvalidPositionException
+    void add_tile(char letter);
+    char remove_tile(int index);
+    int get_count() const;
+    int get_capacity() const;
+    bool is_full() const;
+    bool is_empty() const;
+    void clear();
+    void display() const;
+
+    // merges two racks into one with a space tile between them
+    TileRack operator+(const TileRack& other) const;
+};
 
 // ---------- module 4: game boards (dynamic memory) ----------
 
+/* ---------- old module 4 version of Cottage (raw pointer), kept for reference ----------
 // the seven places of the cottage, stored in a dynamically allocated array
 // aggregation: the cottage uses an array of location structs
 class Cottage {
@@ -356,7 +470,35 @@ public:
     Clue peek(int index) const;
     void display() const;
 };
+*/
 
+// the seven places of the cottage
+// module 8: the locations now live in a DynamicArray
+// aggregation: the cottage uses an array of location structs
+class Cottage {
+private:
+    static const int total_locations = 7;
+    DynamicArray<Location> locations;
+
+public:
+    Cottage();
+    Cottage(const Cottage& other);
+    Cottage& operator=(const Cottage& other);
+    ~Cottage();
+
+    // reads locations.txt, throws a FileException if it is missing or corrupt
+    void load(const string& culprit_role);
+
+    int get_location_count() const;
+    bool is_valid_index(int index) const;
+    bool is_searched(int index) const;
+    const Location& get_location(int index) const;
+    Clue search(int index);
+    Clue peek(int index) const;
+    void display() const;
+};
+
+/* ---------- old module 4 version of Scrabble (jagged array), kept for reference ----------
 // the scrabble board: a jagged array, row 1 has 7 slots and row 2 has 8 slots
 class Scrabble {
 public:
@@ -371,6 +513,34 @@ private:
     void allocate_board(int first_size, int second_size);
     void free_board();
     void copy_from(const Scrabble& other);
+
+public:
+    Scrabble();
+    Scrabble(const Scrabble& other);
+    Scrabble& operator=(const Scrabble& other);
+    ~Scrabble();
+
+    void setup(const string& first_word, const string& second_word);
+    void place_tile(const Clue& clue);
+    bool is_row_complete(WordRow row) const;
+    bool is_row_solved(WordRow row) const;
+    bool both_solved() const;
+    void check_word(WordRow row, const string& typed);
+    string get_word(WordRow row) const;
+    void display() const;
+};
+*/
+
+// the scrabble board: row 1 has 7 slots and row 2 has 8 slots
+// module 8: the jagged array is replaced by two DynamicArray rows
+class Scrabble {
+private:
+    DynamicArray<Tile> row1;
+    DynamicArray<Tile> row2;
+    string word1;
+    string word2;
+    bool solved1;
+    bool solved2;
 
 public:
     Scrabble();
