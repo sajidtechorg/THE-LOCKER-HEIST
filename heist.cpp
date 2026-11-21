@@ -742,6 +742,99 @@ TileRack TileRack::operator+(const TileRack& other) const {
     return merged;
 }
 
+// adds spaces on the right so table columns line up
+static string pad_text(const string& text, int width) {
+    string result = text;
+    while ((int)result.size() < width) {
+        result = result + " ";
+    }
+    return result;
+}
+
+// ---------- score board ----------
+
+ScoreBoard::ScoreBoard() {
+    file_name = "leader/scoreBoard.txt";
+}
+
+// adds one line to the end of the score board file
+bool ScoreBoard::add_score(const string& detective_name, bool won, int credibility,
+                           int turns_left, const string& culprit_role) {
+    // ios::app adds at the end and keeps the old lines
+    ofstream file(file_name.c_str(), ios::app);
+    if (!file) {
+        return false;
+    }
+
+    // date in dd-mm-yy format
+    time_t now = time(0);
+    tm* local = localtime(&now);
+    int day = local->tm_mday;
+    int month = local->tm_mon + 1;
+    int year = (local->tm_year + 1900) % 100;
+
+    // spaces would break the | format, so Partner 1 is saved as Partner_1
+    string role = culprit_role;
+    for (int i = 0; i < (int)role.size(); i++) {
+        if (role[i] == ' ') {
+            role[i] = '_';
+        }
+    }
+
+    file << detective_name << "|" << (won ? "WIN" : "LOSE") << "|" << credibility << "|"
+         << (turns_left < 10 ? "0" : "") << turns_left << "|" << role << "|"
+         << (day < 10 ? "0" : "") << day << "-" << (month < 10 ? "0" : "") << month
+         << "-" << (year < 10 ? "0" : "") << year << endl;
+    return true;
+}
+
+// reads the score board file and prints it as a table
+bool ScoreBoard::display() const {
+    ifstream file(file_name.c_str());
+    if (!file) {
+        cout << "The score board file could not be found" << endl;
+        return false;
+    }
+
+    string line;
+    if (!getline(file, line)) {
+        cout << "The score board file is empty or corrupt" << endl;
+        return false;
+    }
+
+    cout << endl;
+    cout << "-------- Leader/score board --------" << endl;
+    cout << pad_text("Detective", 16) << pad_text("Result", 8) << pad_text("Credibility", 13)
+         << pad_text("Turns left", 12) << pad_text("Culprit", 12) << "Date" << endl;
+
+    int rows = 0;
+    while (getline(file, line)) {
+        clean_line(line);
+        if (line.empty()) {
+            continue;
+        }
+        // a valid line has exactly five separators
+        int bars = 0;
+        for (int i = 0; i < (int)line.size(); i++) {
+            if (line[i] == '|') {
+                bars++;
+            }
+        }
+        if (bars != 5) {
+            cout << "The score board file is corrupt" << endl;
+            return false;
+        }
+        cout << pad_text(get_field(line, 0), 16) << pad_text(get_field(line, 1), 8)
+             << pad_text(get_field(line, 2), 13) << pad_text(get_field(line, 3), 12)
+             << pad_text(get_field(line, 4), 12) << get_field(line, 5) << endl;
+        rows++;
+    }
+    if (rows == 0) {
+        cout << "No games have been played yet" << endl;
+    }
+    return true;
+}
+
 // ---------- game engine ----------
 
 // sets default values and seeds the random number generator
@@ -754,6 +847,7 @@ GameEngine::GameEngine() {
     characters = 0;
     culprit = 0;
     culprit_role = "";
+    score_board = 0;
     for (int i = 0; i < total_characters; i++) {
         interviewed[i] = false;
     }
@@ -1028,6 +1122,34 @@ bool GameEngine::load_clue_words(string& first_word, string& second_word) const 
     return false;
 }
 
+void GameEngine::set_score_board(ScoreBoard* board) {
+    score_board = board;
+}
+
+// temporary test: saves the current state of the game as a finished game
+// the real version is finish_game(), added with the game menu in module 13
+void GameEngine::test_save_result() {
+    if (score_board == 0) {
+        cout << "The score board is not connected" << endl;
+        return;
+    }
+    cout << "Save this game as a win? (Y = WIN, N = LOSE): ";
+    string answer;
+    getline(cin, answer);
+    clean_line(answer);
+    bool won = (answer == "Y" || answer == "y");
+    int turns_left = max_turns - detective.get_turns();
+    if (turns_left < 0) {
+        turns_left = 0;
+    }
+    if (score_board->add_score(detective.get_name(), won, detective.get_credibility(),
+                               turns_left, culprit_role)) {
+        cout << "Result saved on the score board" << endl;
+    } else {
+        cout << "The result could not be saved" << endl;
+    }
+}
+
 // shows both racks merged into one clue, using the + operator of the rack
 void GameEngine::show_rack() const {
     cout << "Rack: ";
@@ -1202,6 +1324,7 @@ void GameEngine::start_new_game() {
         cout << "[1] Visit a location" << endl;
         cout << "[2] Interview a person" << endl;
         cout << "[3] View scrabble board" << endl;
+        cout << "[4] Save a test result on the score board" << endl;
         cout << "[0] Back to main menu" << endl;
         cout << "Choice: ";
         int test_choice = read_number();
@@ -1213,8 +1336,10 @@ void GameEngine::start_new_game() {
             test_interview_people();
         } else if (test_choice == 3) {
             scrabble.display();
+        } else if (test_choice == 4) {
+            test_save_result();
         } else if (state != Exit) {
-            cout << "Invalid choice, please enter a number from 0 to 3" << endl;
+            cout << "Invalid choice, please enter a number from 0 to 4" << endl;
         }
     }
 
@@ -1236,7 +1361,11 @@ void GameEngine::run() {
             start_new_game();
             break;
         case LeaderBoard:
-            cout << "The leader board will be added in module 6" << endl;
+            if (score_board == 0) {
+                cout << "The score board is not connected" << endl;
+            } else {
+                score_board->display();
+            }
             break;
         case About:
             show_about();

@@ -301,6 +301,25 @@ public:
     void display() const;
 };
 
+// ---------- module 6: score board (file handling) ----------
+
+// keeps the results of finished games in leader/scoreBoard.txt
+class ScoreBoard {
+private:
+    string file_name;
+
+public:
+    ScoreBoard();
+
+    // adds one line to the end of the file, false if the file cannot be opened
+    // module 7 turns these failures into exceptions
+    bool add_score(const string& detective_name, bool won, int credibility,
+                   int turns_left, const string& culprit_role);
+
+    // prints the file as a table, false if the file is missing or corrupt
+    bool display() const;
+};
+
 // ---------- game engine ----------
 
 // runs the whole game: menus, loading files and starting a new game
@@ -322,6 +341,9 @@ private:
     TileRack rack_word1;
     TileRack rack_word2;
     bool interviewed[total_characters];
+
+    // association: the engine only knows the score board, it does not own it
+    ScoreBoard* score_board;
 
     // values read from rules.txt
     int max_turns;
@@ -359,9 +381,11 @@ private:
     void show_rack() const;
     void test_visit_locations();
     void test_interview_people();
+    void test_save_result();
 
 public:
     GameEngine();
     ~GameEngine();
+    void set_score_board(ScoreBoard* board);
     void run();
 };
