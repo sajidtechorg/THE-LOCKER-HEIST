@@ -354,15 +354,15 @@ Cottage::~Cottage() {
 
 // reads locations.txt, every place gets the letter of the culprit role
 // the old array is only replaced when the whole file was read correctly
-bool Cottage::load(const string& culprit_role) {
+void Cottage::load(const string& culprit_role) {
     int index = role_index(culprit_role);
     if (index < 0) {
-        return false;
+        throw FileException("The culprit role is not known");
     }
 
     ifstream file("locations.txt");
     if (!file) {
-        return false;
+        throw FileException("Locations.txt could not be found");
     }
 
     Location* loaded = new Location[total_locations];
@@ -379,7 +379,7 @@ bool Cottage::load(const string& culprit_role) {
         int position = atoi(get_field(line, 1).c_str());
         if (letter.empty() || position < 1 || position > total_locations) {
             delete[] loaded;
-            return false;
+            throw FileException("Locations.txt is corrupt, a letter or position is wrong");
         }
         loaded[count].locName = get_field(line, 0);
         loaded[count].letterClueLoc = letter[0];
@@ -391,13 +391,12 @@ bool Cottage::load(const string& culprit_role) {
 
     if (count < total_locations) {
         delete[] loaded;
-        return false;
+        throw FileException("Locations.txt is corrupt, it needs 7 places");
     }
 
     delete[] locations;
     locations = loaded;
     location_count = total_locations;
-    return true;
 }
 
 int Cottage::get_location_count() const {
@@ -409,17 +408,26 @@ bool Cottage::is_valid_index(int index) const {
     return index >= 0 && index < location_count;
 }
 
-// the caller must check is_valid_index() first
+// the next four functions throw an InvalidPositionException for a wrong index
 bool Cottage::is_searched(int index) const {
+    if (!is_valid_index(index)) {
+        throw InvalidPositionException("There is no such location");
+    }
     return locations[index].locSearchFlag;
 }
 
 const Location& Cottage::get_location(int index) const {
+    if (!is_valid_index(index)) {
+        throw InvalidPositionException("There is no such location");
+    }
     return locations[index];
 }
 
 // marks the place as searched and hands over its clue
 Clue Cottage::search(int index) {
+    if (!is_valid_index(index)) {
+        throw InvalidPositionException("There is no such location");
+    }
     locations[index].locSearchFlag = true;
     Clue clue = { locations[index].letterClueLoc, locations[index].boardPosLoc, locations[index].locRow };
     return clue;
@@ -427,6 +435,9 @@ Clue Cottage::search(int index) {
 
 // gives the clue of a place again without changing anything
 Clue Cottage::peek(int index) const {
+    if (!is_valid_index(index)) {
+        throw InvalidPositionException("There is no such location");
+    }
     Clue clue = { locations[index].letterClueLoc, locations[index].boardPosLoc, locations[index].locRow };
     return clue;
 }
@@ -525,21 +536,20 @@ void Scrabble::setup(const string& first_word, const string& second_word) {
 }
 
 // puts a clue letter at its position, positions start at 1
-int Scrabble::place_tile(const Clue& clue) {
+void Scrabble::place_tile(const Clue& clue) {
     if (board == 0) {
-        return board_not_ready;
+        throw InvalidPositionException("The board is not ready");
     }
     int row = (clue.clueRow == Word1) ? 0 : 1;
     if (clue.cluePosition < 1 || clue.cluePosition > row_size[row]) {
-        return invalid_position;
+        throw InvalidPositionException("That board position does not exist");
     }
     Tile& slot = board[row][clue.cluePosition - 1];
     if (slot.filled) {
-        return slot_filled;
+        throw SlotFilledException("That board slot already has a letter");
     }
     slot.tileLetter = clue.clueLetter;
     slot.filled = true;
-    return placed_ok;
 }
 
 // a row is complete when every slot has a letter
@@ -564,22 +574,23 @@ bool Scrabble::both_solved() const {
     return solved1 && solved2;
 }
 
-// compares the typed word with the real word, true means correct
-// module 7 turns a wrong word into an exception
-bool Scrabble::check_word(WordRow row, const string& typed) {
-    if (!is_row_complete(row) || is_row_solved(row)) {
-        return false;
+// compares the typed word with the real word, a wrong word throws an exception
+void Scrabble::check_word(WordRow row, const string& typed) {
+    if (!is_row_complete(row)) {
+        throw ActionNotAllowedException("That row is not complete yet");
+    }
+    if (is_row_solved(row)) {
+        throw InvalidInputException("That word is already solved");
     }
     string target = (row == Word1) ? word1 : word2;
     if (to_upper(typed) != target) {
-        return false;
+        throw InvalidWordException("That is not the right word");
     }
     if (row == Word1) {
         solved1 = true;
     } else {
         solved2 = true;
     }
-    return true;
 }
 
 string Scrabble::get_word(WordRow row) const {
@@ -664,30 +675,32 @@ TileRack::~TileRack() {
     delete[] tiles;
 }
 
-// stores a letter in the next free slot, false when the rack is full
-bool TileRack::add_tile(char letter) {
+// stores a letter in the next free slot
+void TileRack::add_tile(char letter) {
     if (is_full()) {
-        return false;
+        throw RackFullException("The rack is full");
     }
     tiles[count].tileLetter = letter;
     tiles[count].filled = true;
     count++;
-    return true;
 }
 
 // takes a letter out and shifts the rest to the left
-bool TileRack::remove_tile(int index, char& letter) {
-    if (index < 0 || index >= count) {
-        return false;
+char TileRack::remove_tile(int index) {
+    if (is_empty()) {
+        throw RackEmptyException("The rack is empty");
     }
-    letter = tiles[index].tileLetter;
+    if (index < 0 || index >= count) {
+        throw InvalidPositionException("There is no tile at that place in the rack");
+    }
+    char letter = tiles[index].tileLetter;
     for (int i = index; i < count - 1; i++) {
         tiles[i] = tiles[i + 1];
     }
     tiles[count - 1].tileLetter = '\0';
     tiles[count - 1].filled = false;
     count--;
-    return true;
+    return letter;
 }
 
 int TileRack::get_count() const {
@@ -758,12 +771,12 @@ ScoreBoard::ScoreBoard() {
 }
 
 // adds one line to the end of the score board file
-bool ScoreBoard::add_score(const string& detective_name, bool won, int credibility,
+void ScoreBoard::add_score(const string& detective_name, bool won, int credibility,
                            int turns_left, const string& culprit_role) {
     // ios::app adds at the end and keeps the old lines
     ofstream file(file_name.c_str(), ios::app);
     if (!file) {
-        return false;
+        throw FileException("The score board file could not be opened");
     }
 
     // date in dd-mm-yy format
@@ -785,21 +798,18 @@ bool ScoreBoard::add_score(const string& detective_name, bool won, int credibili
          << (turns_left < 10 ? "0" : "") << turns_left << "|" << role << "|"
          << (day < 10 ? "0" : "") << day << "-" << (month < 10 ? "0" : "") << month
          << "-" << (year < 10 ? "0" : "") << year << endl;
-    return true;
 }
 
 // reads the score board file and prints it as a table
-bool ScoreBoard::display() const {
+void ScoreBoard::display() const {
     ifstream file(file_name.c_str());
     if (!file) {
-        cout << "The score board file could not be found" << endl;
-        return false;
+        throw FileException("The score board file could not be found");
     }
 
     string line;
     if (!getline(file, line)) {
-        cout << "The score board file is empty or corrupt" << endl;
-        return false;
+        throw FileException("The score board file is empty or corrupt");
     }
 
     cout << endl;
@@ -821,8 +831,7 @@ bool ScoreBoard::display() const {
             }
         }
         if (bars != 5) {
-            cout << "The score board file is corrupt" << endl;
-            return false;
+            throw FileException("The score board file is corrupt");
         }
         cout << pad_text(get_field(line, 0), 16) << pad_text(get_field(line, 1), 8)
              << pad_text(get_field(line, 2), 13) << pad_text(get_field(line, 3), 12)
@@ -832,7 +841,6 @@ bool ScoreBoard::display() const {
     if (rows == 0) {
         cout << "No games have been played yet" << endl;
     }
-    return true;
 }
 
 // ---------- game engine ----------
@@ -902,24 +910,44 @@ Character* GameEngine::create_character(const string& role, const string& name,
     return 0;
 }
 
-// reads one line and converts it to a number, returns -1 for invalid input
-// when the input ends the game exits, so a piped test cannot loop forever
-int GameEngine::read_number() {
+// reads a full line, an ended input stream stops the game
+string GameEngine::read_line() {
     string input;
     if (!getline(cin, input)) {
         state = Exit;
-        return 0;
+        throw InvalidInputException("The input has ended");
     }
     clean_line(input);
-    if (input.empty() || input.size() > 5) {
-        return -1;
-    }
-    for (int i = 0; i < (int)input.size(); i++) {
+    return input;
+}
+
+// reads a number between low and high, anything else is an invalid input
+int GameEngine::read_choice(int low, int high) {
+    string input = read_line();
+    bool valid = !input.empty() && input.size() <= 5;
+    for (int i = 0; valid && i < (int)input.size(); i++) {
         if (input[i] < '0' || input[i] > '9') {
-            return -1;
+            valid = false;
         }
     }
-    return atoi(input.c_str());
+    int number = valid ? atoi(input.c_str()) : -1;
+    if (number < low || number > high) {
+        throw InvalidInputException("Please enter a number from " + string(1, (char)('0' + low))
+                                    + " to " + string(1, (char)('0' + high)));
+    }
+    return number;
+}
+
+// reads y or n
+bool GameEngine::read_yes_no() {
+    string input = read_line();
+    if (input == "Y" || input == "y") {
+        return true;
+    }
+    if (input == "N" || input == "n") {
+        return false;
+    }
+    throw InvalidInputException("Please answer with Y or N");
 }
 
 void GameEngine::show_title() const {
@@ -944,8 +972,7 @@ void GameEngine::show_main_menu() const {
 void GameEngine::show_about() const {
     ifstream file("about.txt");
     if (!file) {
-        cout << "About.txt could not be found" << endl;
-        return;
+        throw FileException("About.txt could not be found");
     }
     string line;
     cout << endl;
@@ -1028,13 +1055,12 @@ void GameEngine::load_rules() {
 
 // reads characters.txt, picks the culprit and creates the eight character objects
 // every character gets the letter from the column of the culprit role
-bool GameEngine::load_characters() {
+void GameEngine::load_characters() {
     free_characters();
 
     ifstream file("characters.txt");
     if (!file) {
-        cout << "Characters.txt could not be found" << endl;
-        return false;
+        throw FileException("Characters.txt could not be found");
     }
 
     string lines[total_characters];
@@ -1051,16 +1077,14 @@ bool GameEngine::load_characters() {
         count++;
     }
     if (count < total_characters) {
-        cout << "Characters.txt is corrupt, it needs " << total_characters << " people" << endl;
-        return false;
+        throw FileException("Characters.txt is corrupt, it needs 8 people");
     }
 
     // line 0 is the victim, so the culprit is one of the seven suspects after it
     int pick = 1 + rand() % total_suspects;
     int index = role_index(get_field(lines[pick], 1));
     if (index < 0) {
-        cout << "Characters.txt is corrupt, a role is not recognised" << endl;
-        return false;
+        throw FileException("Characters.txt is corrupt, a role is not recognised");
     }
     int column = 4 + index;
 
@@ -1077,31 +1101,27 @@ bool GameEngine::load_characters() {
         string letter = get_field(lines[i], column);
 
         if (letter.empty() || position < 1 || position > total_characters) {
-            cout << "Characters.txt is corrupt, a letter or position is wrong" << endl;
             free_characters();
-            return false;
+            throw FileException("Characters.txt is corrupt, a letter or position is wrong");
         }
 
         characters[i] = create_character(role, name, nation, letter[0], position);
         if (characters[i] == 0) {
-            cout << "Characters.txt is corrupt, a role is not recognised" << endl;
             free_characters();
-            return false;
+            throw FileException("Characters.txt is corrupt, a role is not recognised");
         }
     }
 
     characters[pick]->set_culprit(true);
     culprit = characters[pick];
     culprit_role = culprit->get_role();
-    return true;
 }
 
 // reads the two words of the culprit role from clue.txt
-bool GameEngine::load_clue_words(string& first_word, string& second_word) const {
+void GameEngine::load_clue_words(string& first_word, string& second_word) const {
     ifstream file("clue.txt");
     if (!file) {
-        cout << "Clue.txt could not be found" << endl;
-        return false;
+        throw FileException("Clue.txt could not be found");
     }
 
     string line;
@@ -1112,14 +1132,12 @@ bool GameEngine::load_clue_words(string& first_word, string& second_word) const 
             first_word = get_field(line, 1);
             second_word = get_field(line, 2);
             if (first_word.size() != 7 || second_word.size() != 8) {
-                cout << "Clue.txt is corrupt, word 1 needs 7 letters and word 2 needs 8" << endl;
-                return false;
+                throw FileException("Clue.txt is corrupt, word 1 needs 7 letters and word 2 needs 8");
             }
-            return true;
+            return;
         }
     }
-    cout << "Clue.txt is corrupt, the culprit role was not found" << endl;
-    return false;
+    throw FileException("Clue.txt is corrupt, the culprit role was not found");
 }
 
 void GameEngine::set_score_board(ScoreBoard* board) {
@@ -1130,24 +1148,17 @@ void GameEngine::set_score_board(ScoreBoard* board) {
 // the real version is finish_game(), added with the game menu in module 13
 void GameEngine::test_save_result() {
     if (score_board == 0) {
-        cout << "The score board is not connected" << endl;
-        return;
+        throw FileException("The score board is not connected");
     }
     cout << "Save this game as a win? (Y = WIN, N = LOSE): ";
-    string answer;
-    getline(cin, answer);
-    clean_line(answer);
-    bool won = (answer == "Y" || answer == "y");
+    bool won = read_yes_no();
     int turns_left = max_turns - detective.get_turns();
     if (turns_left < 0) {
         turns_left = 0;
     }
-    if (score_board->add_score(detective.get_name(), won, detective.get_credibility(),
-                               turns_left, culprit_role)) {
-        cout << "Result saved on the score board" << endl;
-    } else {
-        cout << "The result could not be saved" << endl;
-    }
+    score_board->add_score(detective.get_name(), won, detective.get_credibility(),
+                           turns_left, culprit_role);
+    cout << "Result saved on the score board" << endl;
 }
 
 // shows both racks merged into one clue, using the + operator of the rack
@@ -1162,105 +1173,93 @@ void GameEngine::show_rack() const {
     cout << endl;
 }
 
-// temporary test: interview people and collect letters for word 2
-// the credibility rule is only shown here, module 13 charges the penalties
-void GameEngine::test_interview_people() {
-    while (state != Exit) {
-        cout << endl;
-        cout << "====== Character menu (temporary test) ======" << endl;
-        for (int i = 0; i < total_characters; i++) {
-            cout << "[" << (i + 1) << "] " << characters[i]->get_name() << " ("
-                 << characters[i]->get_role() << ") - "
-                 << (interviewed[i] ? "Interviewed" : "NOT interviewed") << endl;
-        }
-        cout << "[0] Back" << endl;
-        cout << "Pick: ";
-
-        int pick = read_number();
-        if (pick == 0) {
-            return;
-        }
-        if (pick < 1 || pick > total_characters) {
-            cout << "Invalid choice, please pick a number from the list" << endl;
-            continue;
-        }
-
-        int index = pick - 1;
-        Character* person = characters[index];
-        if (interviewed[index]) {
-            cout << "You have already interviewed " << person->get_name() << endl;
-            continue;
-        }
-
-        // polymorphism: each character type knows its own required credibility
-        if (detective.get_credibility() < person->required_credibility()) {
-            cout << person->get_name() << " will only talk to a detective with at least "
-                 << person->required_credibility() << " credibility" << endl;
-            continue;
-        }
-
-        Clue clue = { person->get_letter(), person->get_position(), person->get_row() };
-        int result = scrabble.place_tile(clue);
-        if (result != Scrabble::placed_ok) {
-            cout << "The letter could not be placed" << endl;
-            continue;
-        }
-        rack_word2.add_tile(clue.clueLetter);
-        interviewed[index] = true;
-        cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
-             << " of Word 2." << endl;
-        cout << "Letter has been placed." << endl;
-        show_rack();
-        scrabble.display();
+// temporary test: interview one person and collect a letter for word 2
+// every problem is thrown as an exception and handled in main()
+void GameEngine::test_interview_person() {
+    cout << endl;
+    cout << "====== Character menu (temporary test) ======" << endl;
+    for (int i = 0; i < total_characters; i++) {
+        cout << "[" << (i + 1) << "] " << characters[i]->get_name() << " ("
+             << characters[i]->get_role() << ") - "
+             << (interviewed[i] ? "Interviewed" : "NOT interviewed") << endl;
     }
+    cout << "[0] Back" << endl;
+    cout << "Pick: ";
+
+    int pick = read_choice(0, total_characters);
+    if (pick == 0) {
+        return;
+    }
+
+    int index = pick - 1;
+    Character* person = characters[index];
+    if (interviewed[index]) {
+        throw InvalidInputException("You have already interviewed " + person->get_name());
+    }
+
+    // polymorphism: each character type knows its own required credibility
+    if (detective.get_credibility() < person->required_credibility()) {
+        throw CredibilityException(person->get_name() + " will only talk to a detective with at least "
+                                   + to_string(person->required_credibility()) + " credibility");
+    }
+
+    Clue clue = { person->get_letter(), person->get_position(), person->get_row() };
+    scrabble.place_tile(clue);
+    rack_word2.add_tile(clue.clueLetter);
+    interviewed[index] = true;
+    detective.use_turn();
+    cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
+         << " of Word 2." << endl;
+    cout << "Letter has been placed." << endl;
+    show_rack();
+    scrabble.display();
 }
 
-// temporary test: visit locations, collect letters and place them on the board
+// temporary test: visit one location and place its letter on the board
 // the real version comes with the game menu in module 13
-void GameEngine::test_visit_locations() {
-    while (state != Exit) {
-        cout << endl;
-        cout << "====== Location menu (temporary test) ======" << endl;
-        cottage.display();
-        cout << "[0] Back" << endl;
-        cout << "Pick: ";
+void GameEngine::test_visit_location() {
+    cout << endl;
+    cout << "====== Location menu (temporary test) ======" << endl;
+    cottage.display();
+    cout << "[0] Back" << endl;
+    cout << "Pick: ";
 
-        int pick = read_number();
-        if (pick == 0) {
-            return;
-        }
-        if (!cottage.is_valid_index(pick - 1)) {
-            cout << "Invalid choice, please pick a number from the list" << endl;
-            continue;
-        }
+    int pick = read_choice(0, cottage.get_location_count());
+    if (pick == 0) {
+        return;
+    }
 
-        int index = pick - 1;
-        if (cottage.is_searched(index)) {
-            cout << "You have already searched this place. Search again? (Y/N): ";
-            string answer;
-            getline(cin, answer);
-            if (answer == "Y" || answer == "y") {
-                Clue again = cottage.peek(index);
-                cout << "Letter " << again.clueLetter << " is at position " << again.cluePosition
-                     << " of Word 1" << endl;
-            }
-            continue;
+    int index = pick - 1;
+    if (cottage.is_searched(index)) {
+        cout << "You have already searched this place. Search again? (Y/N): ";
+        if (read_yes_no()) {
+            Clue again = cottage.peek(index);
+            cout << "Letter " << again.clueLetter << " is at position " << again.cluePosition
+                 << " of Word 1" << endl;
         }
+        return;
+    }
 
-        Clue clue = cottage.search(index);
-        cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
-             << " of Word 1." << endl;
-        int result = scrabble.place_tile(clue);
-        if (result == Scrabble::placed_ok) {
-            rack_word1.add_tile(clue.clueLetter);
-            cout << "Letter has been placed." << endl;
-        } else if (result == Scrabble::slot_filled) {
-            cout << "That board slot already has a letter" << endl;
-        } else {
-            cout << "The letter could not be placed" << endl;
-        }
-        show_rack();
-        scrabble.display();
+    // the tile is placed first, so a failure leaves the place unsearched
+    Clue clue = cottage.peek(index);
+    scrabble.place_tile(clue);
+    rack_word1.add_tile(clue.clueLetter);
+    cottage.search(index);
+    detective.use_turn();
+    cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
+         << " of Word 1." << endl;
+    cout << "Letter has been placed." << endl;
+    show_rack();
+    scrabble.display();
+}
+
+// the game is lost when credibility or turns run out
+void GameEngine::check_end_conditions() {
+    if (state != Playing) {
+        return;
+    }
+    if (detective.get_credibility() <= 0 || detective.get_turns() >= max_turns) {
+        state = Lost;
     }
 }
 
@@ -1269,11 +1268,7 @@ void GameEngine::start_new_game() {
     string name = "";
     while (true) {
         cout << "Enter detective name: ";
-        if (!getline(cin, name)) {
-            state = Exit;
-            return;
-        }
-        clean_line(name);
+        name = read_line();
         if (name.empty()) {
             cout << "The name cannot be empty" << endl;
         } else if (has_space(name)) {
@@ -1283,22 +1278,14 @@ void GameEngine::start_new_game() {
         }
     }
 
+    // each loader throws a FileException if its file is missing or corrupt
     load_rules();
-    if (!load_characters()) {
-        cout << "The game cannot start without the character data" << endl;
-        return;
-    }
+    load_characters();
 
     string first_word;
     string second_word;
-    if (!load_clue_words(first_word, second_word)) {
-        cout << "The game cannot start without the clue words" << endl;
-        return;
-    }
-    if (!cottage.load(culprit_role)) {
-        cout << "Locations.txt is missing or corrupt, the game cannot start" << endl;
-        return;
-    }
+    load_clue_words(first_word, second_word);
+    cottage.load(culprit_role);
     scrabble.setup(first_word, second_word);
 
     detective = Detective(name, starting_credibility);
@@ -1315,72 +1302,108 @@ void GameEngine::start_new_game() {
     show_characters();
     cout << endl;
     scrabble.display();
+}
 
-    // temporary menu of modules 4 and 5, module 13 replaces it with the real game menu
-    while (state != Exit) {
-        cout << endl;
-        cout << "---- Temporary test menu ----" << endl;
-        show_rack();
-        cout << "[1] Visit a location" << endl;
-        cout << "[2] Interview a person" << endl;
-        cout << "[3] View scrabble board" << endl;
-        cout << "[4] Save a test result on the score board" << endl;
-        cout << "[0] Back to main menu" << endl;
-        cout << "Choice: ";
-        int test_choice = read_number();
-        if (test_choice == 0) {
-            break;
-        } else if (test_choice == 1) {
-            test_visit_locations();
-        } else if (test_choice == 2) {
-            test_interview_people();
-        } else if (test_choice == 3) {
-            scrabble.display();
-        } else if (test_choice == 4) {
-            test_save_result();
-        } else if (state != Exit) {
-            cout << "Invalid choice, please enter a number from 0 to 4" << endl;
-        }
+// one pass of the temporary game menu, module 13 replaces it with the real one
+void GameEngine::test_menu_step() {
+    cout << endl;
+    cout << "---- Temporary test menu ----" << endl;
+    cout << "Credibility: " << detective.get_credibility()
+         << " | Turns used: " << detective.get_turns() << " of " << max_turns << endl;
+    show_rack();
+    cout << "[1] Visit a location" << endl;
+    cout << "[2] Interview a person" << endl;
+    cout << "[3] View scrabble board" << endl;
+    cout << "[4] Save a test result on the score board" << endl;
+    cout << "[0] Back to main menu" << endl;
+    cout << "Choice: ";
+
+    int choice = read_choice(0, 4);
+    switch (choice) {
+    case 0:
+        state = Menu;
+        break;
+    case 1:
+        test_visit_location();
+        break;
+    case 2:
+        test_interview_person();
+        break;
+    case 3:
+        scrabble.display();
+        break;
+    case 4:
+        test_save_result();
+        break;
     }
+    check_end_conditions();
+}
 
-    // the game menu is added in module 13, so go back to the main menu for now
-    if (state != Exit) {
+// one pass of the main menu
+void GameEngine::main_menu_step() {
+    show_main_menu();
+    int choice = read_choice(1, 5);
+    switch (choice) {
+    case NewGame:
+        start_new_game();
+        break;
+    case LeaderBoard:
+        if (score_board == 0) {
+            throw FileException("The score board is not connected");
+        }
+        score_board->display();
+        break;
+    case About:
+        show_about();
+        break;
+    case Rules:
+        show_rules();
+        break;
+    case ExitGame:
+        cout << "Goodbye, detective" << endl;
+        state = Exit;
+        break;
+    }
+}
+
+void GameEngine::start() {
+    show_title();
+    state = Menu;
+}
+
+bool GameEngine::is_running() const {
+    return state != Exit;
+}
+
+// the engine decides what happens next, main() calls this inside a try block
+void GameEngine::run_step() {
+    if (state == Menu) {
+        main_menu_step();
+    } else if (state == Playing) {
+        test_menu_step();
+    } else if (state == Won || state == Lost) {
+        // temporary end screen, the real finish_game() comes in module 13
+        cout << endl;
+        cout << (state == Won ? "You win!" : "Game over, you lose!") << endl;
         state = Menu;
     }
 }
 
-// main loop of the program
-void GameEngine::run() {
-    show_title();
-    state = Menu;
-    while (state != Exit) {
-        show_main_menu();
-        int choice = read_number();
-        switch (choice) {
-        case NewGame:
-            start_new_game();
-            break;
-        case LeaderBoard:
-            if (score_board == 0) {
-                cout << "The score board is not connected" << endl;
-            } else {
-                score_board->display();
-            }
-            break;
-        case About:
-            show_about();
-            break;
-        case Rules:
-            show_rules();
-            break;
-        case ExitGame:
-            cout << "Goodbye, detective" << endl;
-            state = Exit;
-            break;
-        default:
-            if (state != Exit) {
-                cout << "Invalid choice, please enter a number from 1 to 5" << endl;
-            }
-        }
+// prints the message of an exception and charges the penalty it carries
+void GameEngine::report_error(const GameException& error) {
+    cout << "Error: " << error.what() << endl;
+
+    if (state != Playing) {
+        return;
     }
+    if (error.get_penalty_kind() == 1) {
+        detective.use_turn();
+        detective.lose_credibility(wrong_turn_penalty);
+        cout << "That was a wrong turn, you lose " << wrong_turn_penalty << " credibility" << endl;
+    } else if (error.get_penalty_kind() == 2) {
+        detective.use_turn();
+        detective.lose_credibility(wrong_word_penalty);
+        cout << "That was a wrong word, you lose " << wrong_word_penalty << " credibility" << endl;
+    }
+    check_end_conditions();
 }

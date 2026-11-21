@@ -5,6 +5,18 @@ int main() {
     ScoreBoard score_board;
     GameEngine engine;
     engine.set_score_board(&score_board);
-    engine.run();
+    engine.start();
+
+    // every exception of the game is caught here, the game then goes on
+    while (engine.is_running()) {
+        try {
+            engine.run_step();
+        } catch (const GameException& error) {
+            engine.report_error(error);
+        } catch (...) {
+            cout << "An unexpected error happened, the game will close" << endl;
+            return 1;
+        }
+    }
     return 0;
 }

@@ -22,6 +22,100 @@ enum GameState { Menu, Playing, Won, Lost, Exit };
 // options of the main menu
 enum MenuChoice { NewGame = 1, LeaderBoard, About, Rules, ExitGame };
 
+// ---------- module 7: exceptions ----------
+
+// base class of every exception in the game
+// penalty_kind tells the engine what the mistake costs: 0 nothing, 1 wrong turn, 2 wrong word
+class GameException {
+private:
+    string message;
+    int penalty_kind;
+
+public:
+    GameException(string text, int kind) {
+        message = text;
+        penalty_kind = kind;
+    }
+    virtual ~GameException() {
+    }
+    string what() const {
+        return message;
+    }
+    int get_penalty_kind() const {
+        return penalty_kind;
+    }
+};
+
+// a text file is missing or corrupt
+class FileException : public GameException {
+public:
+    FileException(string text) : GameException(text, 0) {
+    }
+};
+
+// the player typed something that is not allowed, no penalty
+class InvalidInputException : public GameException {
+public:
+    InvalidInputException(string text) : GameException(text, 0) {
+    }
+};
+
+// a word typed by the player is wrong, costs a wrong word
+class InvalidWordException : public GameException {
+public:
+    InvalidWordException(string text) : GameException(text, 2) {
+    }
+};
+
+// a rack has no space left
+class RackFullException : public GameException {
+public:
+    RackFullException(string text) : GameException(text, 0) {
+    }
+};
+
+// a rack has nothing to take out
+class RackEmptyException : public GameException {
+public:
+    RackEmptyException(string text) : GameException(text, 0) {
+    }
+};
+
+// a board or array position is outside the allowed range
+class InvalidPositionException : public GameException {
+public:
+    InvalidPositionException(string text) : GameException(text, 0) {
+    }
+};
+
+// a board slot already holds a letter
+class SlotFilledException : public GameException {
+public:
+    SlotFilledException(string text) : GameException(text, 0) {
+    }
+};
+
+// the detective does not have enough credibility to interview someone, costs a wrong turn
+class CredibilityException : public GameException {
+public:
+    CredibilityException(string text) : GameException(text, 1) {
+    }
+};
+
+// an action was tried too early, costs a wrong turn
+class ActionNotAllowedException : public GameException {
+public:
+    ActionNotAllowedException(string text) : GameException(text, 1) {
+    }
+};
+
+// the detective accused the wrong person, costs a wrong turn
+class WrongAccusationException : public GameException {
+public:
+    WrongAccusationException(string text) : GameException(text, 1) {
+    }
+};
+
 // ---------- structures ----------
 
 // one slot of the scrabble board
@@ -220,10 +314,10 @@ public:
     TileRack& operator=(const TileRack& other);
     ~TileRack();
 
-    // return false when the rack is full or the index is wrong
-    // module 7 turns these failures into exceptions
-    bool add_tile(char letter);
-    bool remove_tile(int index, char& letter);
+    // add_tile throws RackFullException, remove_tile throws RackEmptyException
+    // or InvalidPositionException
+    void add_tile(char letter);
+    char remove_tile(int index);
     int get_count() const;
     int get_capacity() const;
     bool is_full() const;
@@ -251,9 +345,8 @@ public:
     Cottage& operator=(const Cottage& other);
     ~Cottage();
 
-    // reads locations.txt, returns false if the file is missing or corrupt
-    // module 7 turns this failure into an exception
-    bool load(const string& culprit_role);
+    // reads locations.txt, throws a FileException if it is missing or corrupt
+    void load(const string& culprit_role);
 
     int get_location_count() const;
     bool is_valid_index(int index) const;
@@ -267,12 +360,6 @@ public:
 // the scrabble board: a jagged array, row 1 has 7 slots and row 2 has 8 slots
 class Scrabble {
 public:
-    // results of place_tile(), module 7 turns these into exceptions
-    static const int placed_ok = 0;
-    static const int invalid_position = 1;
-    static const int slot_filled = 2;
-    static const int board_not_ready = 3;
-
 private:
     Tile** board;
     int row_size[2];
@@ -292,11 +379,11 @@ public:
     ~Scrabble();
 
     void setup(const string& first_word, const string& second_word);
-    int place_tile(const Clue& clue);
+    void place_tile(const Clue& clue);
     bool is_row_complete(WordRow row) const;
     bool is_row_solved(WordRow row) const;
     bool both_solved() const;
-    bool check_word(WordRow row, const string& typed);
+    void check_word(WordRow row, const string& typed);
     string get_word(WordRow row) const;
     void display() const;
 };
@@ -311,13 +398,12 @@ private:
 public:
     ScoreBoard();
 
-    // adds one line to the end of the file, false if the file cannot be opened
-    // module 7 turns these failures into exceptions
-    bool add_score(const string& detective_name, bool won, int credibility,
+    // adds one line to the end of the file, throws a FileException if it cannot be opened
+    void add_score(const string& detective_name, bool won, int credibility,
                    int turns_left, const string& culprit_role);
 
-    // prints the file as a table, false if the file is missing or corrupt
-    bool display() const;
+    // prints the file as a table, throws a FileException if it is missing or corrupt
+    void display() const;
 };
 
 // ---------- game engine ----------
@@ -363,7 +449,9 @@ private:
     static bool has_space(const string& text);
     static Character* create_character(const string& role, const string& name,
                                        const string& nation, char letter, int position);
-    int read_number();
+    string read_line();
+    int read_choice(int low, int high);
+    bool read_yes_no();
 
     void show_title() const;
     void show_main_menu() const;
@@ -372,20 +460,26 @@ private:
     void show_characters() const;
 
     void load_rules();
-    bool load_characters();
-    bool load_clue_words(string& first_word, string& second_word) const;
+    void load_characters();
+    void load_clue_words(string& first_word, string& second_word) const;
     void free_characters();
     void start_new_game();
 
     // temporary tests of modules 4 and 5, module 13 replaces them with the real game menu
+    void main_menu_step();
+    void test_menu_step();
     void show_rack() const;
-    void test_visit_locations();
-    void test_interview_people();
+    void test_visit_location();
+    void test_interview_person();
     void test_save_result();
+    void check_end_conditions();
 
 public:
     GameEngine();
     ~GameEngine();
     void set_score_board(ScoreBoard* board);
-    void run();
+    void start();
+    bool is_running() const;
+    void run_step();
+    void report_error(const GameException& error);
 };
