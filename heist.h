@@ -22,13 +22,196 @@ enum GameState { Menu, Playing, Won, Lost, Exit };
 // options of the main menu
 enum MenuChoice { NewGame = 1, LeaderBoard, About, Rules, ExitGame };
 
+// ---------- module 7: exceptions ----------
+
+// base class of every exception in the game
+// penalty_kind tells the engine what the mistake costs: 0 nothing, 1 wrong turn, 2 wrong word
+class GameException {
+private:
+    string message;
+    int penalty_kind;
+
+public:
+    GameException(string text, int kind) {
+        message = text;
+        penalty_kind = kind;
+    }
+    virtual ~GameException() {
+    }
+    string what() const {
+        return message;
+    }
+    int get_penalty_kind() const {
+        return penalty_kind;
+    }
+};
+
+// a text file is missing or corrupt
+class FileException : public GameException {
+public:
+    FileException(string text) : GameException(text, 0) {
+    }
+};
+
+// the player typed something that is not allowed, no penalty
+class InvalidInputException : public GameException {
+public:
+    InvalidInputException(string text) : GameException(text, 0) {
+    }
+};
+
+// a word typed by the player is wrong, costs a wrong word
+class InvalidWordException : public GameException {
+public:
+    InvalidWordException(string text) : GameException(text, 2) {
+    }
+};
+
+// a rack has no space left
+class RackFullException : public GameException {
+public:
+    RackFullException(string text) : GameException(text, 0) {
+    }
+};
+
+// a rack has nothing to take out
+class RackEmptyException : public GameException {
+public:
+    RackEmptyException(string text) : GameException(text, 0) {
+    }
+};
+
+// a board or array position is outside the allowed range
+class InvalidPositionException : public GameException {
+public:
+    InvalidPositionException(string text) : GameException(text, 0) {
+    }
+};
+
+// a board slot already holds a letter
+class SlotFilledException : public GameException {
+public:
+    SlotFilledException(string text) : GameException(text, 0) {
+    }
+};
+
+// the detective does not have enough credibility to interview someone, costs a wrong turn
+class CredibilityException : public GameException {
+public:
+    CredibilityException(string text) : GameException(text, 1) {
+    }
+};
+
+// an action was tried too early, costs a wrong turn
+class ActionNotAllowedException : public GameException {
+public:
+    ActionNotAllowedException(string text) : GameException(text, 1) {
+    }
+};
+
+// the detective accused the wrong person, costs a wrong turn
+class WrongAccusationException : public GameException {
+public:
+    WrongAccusationException(string text) : GameException(text, 1) {
+    }
+};
+
+// ---------- module 8: template ----------
+
+// generic dynamic array used by cottage, scrabble and tile rack
+// it owns its memory and makes deep copies, so those classes no longer need new and delete
+template <class T>
+class DynamicArray {
+private:
+    T* data;
+    int length;
+
+public:
+    // empty array
+    DynamicArray() {
+        data = 0;
+        length = 0;
+    }
+
+    // array with the given number of slots, all values start at zero
+    DynamicArray(int size) {
+        length = size;
+        if (size > 0) {
+            data = new T[size]();
+        } else {
+            data = 0;
+            length = 0;
+        }
+    }
+
+    // deep copy: a new block of memory is created and every element is copied
+    DynamicArray(const DynamicArray<T>& other) {
+        length = other.length;
+        if (length > 0) {
+            data = new T[length];
+            for (int i = 0; i < length; i++) {
+                data[i] = other.data[i];
+            }
+        } else {
+            data = 0;
+        }
+    }
+
+    // deep copy assignment, safe against self assignment
+    DynamicArray<T>& operator=(const DynamicArray<T>& other) {
+        if (this != &other) {
+            delete[] data;
+            length = other.length;
+            if (length > 0) {
+                data = new T[length];
+                for (int i = 0; i < length; i++) {
+                    data[i] = other.data[i];
+                }
+            } else {
+                data = 0;
+            }
+        }
+        return *this;
+    }
+
+    ~DynamicArray() {
+        delete[] data;
+    }
+
+    int size() const {
+        return length;
+    }
+
+    // access with a range check
+    T& operator[](int index) {
+        if (index < 0 || index >= length) {
+            throw InvalidPositionException("Array index is out of range");
+        }
+        return data[index];
+    }
+
+    const T& operator[](int index) const {
+        if (index < 0 || index >= length) {
+            throw InvalidPositionException("Array index is out of range");
+        }
+        return data[index];
+    }
+};
+
 // ---------- structures ----------
 
 // one slot of the scrabble board
 struct Tile {
     char tileLetter;   // letter stored in the slot
     bool filled;       // true once a letter has been placed
+
+    // module 9: stream operators, they are friends because they are not members
+    friend ostream& operator<<(ostream& out, const Tile& tile);
+    friend istream& operator>>(istream& in, Tile& tile);
 };
+
+// two tiles are equal when their letters match, capital or small
+bool operator==(const Tile& first, const Tile& second);
 
 // a letter handed over by a location or a character
 struct Clue {
@@ -44,6 +227,9 @@ struct Location {
     int boardPosLoc;       // board position of that letter
     WordRow locRow;        // always Word1 for locations
     bool locSearchFlag;    // true once the detective has searched it
+
+    friend ostream& operator<<(ostream& out, const Location& place);
+    friend istream& operator>>(istream& in, Location& place);
 };
 
 // ---------- helper functions ----------
@@ -64,6 +250,11 @@ private:
     string characterRole;
     string nationality;
     bool isCulprit;
+
+    // module 9: the engine reads and sets the culprit flag directly (friend class)
+    friend class GameEngine;
+    friend ostream& operator<<(ostream& out, const Character& person);
+    friend istream& operator>>(istream& in, Character& person);
 
 public:
     Character(string name, string role, string nation, bool culprit);
@@ -202,8 +393,73 @@ public:
     virtual void display() const;
 };
 
+// ---------- module 5: tile rack (dynamic memory) ----------
+
+/* ---------- old module 5 version of TileRack (raw pointer), kept for reference ----------
+// holds the letters the detective has collected, stored in a dynamically allocated array
+class TileRack {
+private:
+    Tile* tiles;
+    int capacity;
+    int count;
+
+    void copy_from(const TileRack& other);
+
+public:
+    TileRack();
+    TileRack(int size);
+    TileRack(const TileRack& other);
+    TileRack& operator=(const TileRack& other);
+    ~TileRack();
+
+    // add_tile throws RackFullException, remove_tile throws RackEmptyException
+    // or InvalidPositionException
+    void add_tile(char letter);
+    char remove_tile(int index);
+    int get_count() const;
+    int get_capacity() const;
+    bool is_full() const;
+    bool is_empty() const;
+    void clear();
+    void display() const;
+
+    // merges two racks into one with a space tile between them
+    TileRack operator+(const TileRack& other) const;
+};
+*/
+
+// holds the letters the detective has collected
+// module 8: the tiles now live in a DynamicArray, so no raw pointer is needed
+class TileRack {
+private:
+    DynamicArray<Tile> tiles;
+    int count;
+
+public:
+    TileRack();
+    TileRack(int capacity);
+    TileRack(const TileRack& other);
+    TileRack& operator=(const TileRack& other);
+    ~TileRack();
+
+    // add_tile throws RackFullException, remove_tile throws RackEmptyException
+    // or InvalidPositionException
+    void add_tile(char letter);
+    char remove_tile(int index);
+    int get_count() const;
+    int get_capacity() const;
+    bool is_full() const;
+    bool is_empty() const;
+    void clear();
+    void display() const;
+
+    // merges two racks into one with a space tile between them
+    TileRack operator+(const TileRack& other) const;
+};
+
 // ---------- module 4: game boards (dynamic memory) ----------
 
+/* ---------- old module 4 version of Cottage (raw pointer), kept for reference ----------
 // the seven places of the cottage, stored in a dynamically allocated array
 // aggregation: the cottage uses an array of location structs
 class Cottage {
@@ -218,9 +474,35 @@ public:
     Cottage& operator=(const Cottage& other);
     ~Cottage();
 
-    // reads locations.txt, returns false if the file is missing or corrupt
-    // module 7 turns this failure into an exception
-    bool load(const string& culprit_role);
+    // reads locations.txt, throws a FileException if it is missing or corrupt
+    void load(const string& culprit_role);
+
+    int get_location_count() const;
+    bool is_valid_index(int index) const;
+    bool is_searched(int index) const;
+    const Location& get_location(int index) const;
+    Clue search(int index);
+    Clue peek(int index) const;
+    void display() const;
+};
+*/
+
+// the seven places of the cottage
+// module 8: the locations now live in a DynamicArray
+// aggregation: the cottage uses an array of location structs
+class Cottage {
+private:
+    static const int total_locations = 7;
+    DynamicArray<Location> locations;
+
+public:
+    Cottage();
+    Cottage(const Cottage& other);
+    Cottage& operator=(const Cottage& other);
+    ~Cottage();
+
+    // reads locations.txt, throws a FileException if it is missing or corrupt
+    void load(const string& culprit_role);
 
     int get_location_count() const;
     bool is_valid_index(int index) const;
@@ -231,15 +513,10 @@ public:
     void display() const;
 };
 
+/* ---------- old module 4 version of Scrabble (jagged array), kept for reference ----------
 // the scrabble board: a jagged array, row 1 has 7 slots and row 2 has 8 slots
 class Scrabble {
 public:
-    // results of place_tile(), module 7 turns these into exceptions
-    static const int placed_ok = 0;
-    static const int invalid_position = 1;
-    static const int slot_filled = 2;
-    static const int board_not_ready = 3;
-
 private:
     Tile** board;
     int row_size[2];
@@ -259,12 +536,61 @@ public:
     ~Scrabble();
 
     void setup(const string& first_word, const string& second_word);
-    int place_tile(const Clue& clue);
+    void place_tile(const Clue& clue);
     bool is_row_complete(WordRow row) const;
     bool is_row_solved(WordRow row) const;
     bool both_solved() const;
-    bool check_word(WordRow row, const string& typed);
+    void check_word(WordRow row, const string& typed);
     string get_word(WordRow row) const;
+    void display() const;
+};
+*/
+
+// the scrabble board: row 1 has 7 slots and row 2 has 8 slots
+// module 8: the jagged array is replaced by two DynamicArray rows
+class Scrabble {
+private:
+    DynamicArray<Tile> row1;
+    DynamicArray<Tile> row2;
+    string word1;
+    string word2;
+    bool solved1;
+    bool solved2;
+
+    friend ostream& operator<<(ostream& out, const Scrabble& board);
+    friend istream& operator>>(istream& in, Scrabble& board);
+
+public:
+    Scrabble();
+    Scrabble(const Scrabble& other);
+    Scrabble& operator=(const Scrabble& other);
+    ~Scrabble();
+
+    void setup(const string& first_word, const string& second_word);
+    void place_tile(const Clue& clue);
+    bool is_row_complete(WordRow row) const;
+    bool is_row_solved(WordRow row) const;
+    bool both_solved() const;
+    void check_word(WordRow row, const string& typed);
+    string get_word(WordRow row) const;
+    void display() const;
+};
+
+// ---------- module 6: score board (file handling) ----------
+
+// keeps the results of finished games in leader/scoreBoard.txt
+class ScoreBoard {
+private:
+    string file_name;
+
+public:
+    ScoreBoard();
+
+    // adds one line to the end of the file, throws a FileException if it cannot be opened
+    void add_score(const string& detective_name, bool won, int credibility,
+                   int turns_left, const string& culprit_role);
+
+    // prints the file as a table, throws a FileException if it is missing or corrupt
     void display() const;
 };
 
@@ -286,6 +612,12 @@ private:
     Detective detective;
     Cottage cottage;
     Scrabble scrabble;
+    TileRack rack_word1;
+    TileRack rack_word2;
+    bool interviewed[total_characters];
+
+    // association: the engine only knows the score board, it does not own it
+    ScoreBoard* score_board;
 
     // values read from rules.txt
     int max_turns;
@@ -305,7 +637,9 @@ private:
     static bool has_space(const string& text);
     static Character* create_character(const string& role, const string& name,
                                        const string& nation, char letter, int position);
-    int read_number();
+    string read_line();
+    int read_choice(int low, int high);
+    bool read_yes_no();
 
     void show_title() const;
     void show_main_menu() const;
@@ -314,16 +648,26 @@ private:
     void show_characters() const;
 
     void load_rules();
-    bool load_characters();
-    bool load_clue_words(string& first_word, string& second_word) const;
+    void load_characters();
+    void load_clue_words(string& first_word, string& second_word) const;
     void free_characters();
     void start_new_game();
 
-    // temporary test of module 4, module 13 replaces it with the real game menu
-    void test_visit_locations();
+    // temporary tests of modules 4 and 5, module 13 replaces them with the real game menu
+    void main_menu_step();
+    void test_menu_step();
+    void show_rack() const;
+    void test_visit_location();
+    void test_interview_person();
+    void test_save_result();
+    void check_end_conditions();
 
 public:
     GameEngine();
     ~GameEngine();
-    void run();
+    void set_score_board(ScoreBoard* board);
+    void start();
+    bool is_running() const;
+    void run_step();
+    void report_error(const GameException& error);
 };
