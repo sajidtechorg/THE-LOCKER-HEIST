@@ -489,11 +489,14 @@ public:
 
 // the seven places of the cottage
 // module 8: the locations now live in a DynamicArray
-// aggregation: the cottage uses an array of location structs
+// module 10, aggregation (hollow diamond in the class diagram):
+// aggregation means the whole holds a collection of parts, but each part is a simple
+// data object that has its own meaning (a location struct is just a place with a letter)
+// the cottage is the whole and the location array is the collection it is made of
 class Cottage {
 private:
     static const int total_locations = 7;
-    DynamicArray<Location> locations;
+    DynamicArray<Location> locations;   // aggregation: the cottage aggregates its locations
 
 public:
     Cottage();
@@ -597,6 +600,8 @@ public:
 // ---------- game engine ----------
 
 // runs the whole game: menus, loading files and starting a new game
+// module 12, singleton pattern: only one engine can ever exist, so the whole game
+// runs as a single entity, the one object is reached with get_instance()
 class GameEngine {
 private:
     // fallback values used when rules.txt is missing or corrupt
@@ -609,6 +614,11 @@ private:
     static const int total_suspects = 7;
 
     GameState state;
+
+    // module 10, composition (filled diamond in the class diagram):
+    // composition means the whole owns its parts, the parts are created with the engine
+    // and destroyed with it, they cannot live without it
+    // the engine is composed of a detective, a cottage, a scrabble board and two tile racks
     Detective detective;
     Cottage cottage;
     Scrabble scrabble;
@@ -616,7 +626,10 @@ private:
     TileRack rack_word2;
     bool interviewed[total_characters];
 
-    // association: the engine only knows the score board, it does not own it
+    // module 10, association (plain arrow in the class diagram):
+    // association means one class only knows and uses another, it does not own it
+    // main() creates the score board and the engine just keeps a pointer to it, so the
+    // score board stays alive even if the engine is gone
     ScoreBoard* score_board;
 
     // values read from rules.txt
@@ -630,9 +643,13 @@ private:
     Character* culprit;
     string culprit_role;
 
-    // the engine owns raw pointers, so copying it is not allowed
+    // singleton: the constructor is private so nobody outside can create an engine
+    // copying is not allowed either, it would make a second engine and the engine
+    // owns raw pointers (copy functions are declared here and never defined)
+    GameEngine();
     GameEngine(const GameEngine& other);
     GameEngine& operator=(const GameEngine& other);
+    ~GameEngine();
 
     static bool has_space(const string& text);
     static Character* create_character(const string& role, const string& name,
@@ -663,8 +680,10 @@ private:
     void check_end_conditions();
 
 public:
-    GameEngine();
-    ~GameEngine();
+    // access method: creates the engine on the first call and returns the same one every time
+    // it returns a reference, so the caller must also store it as a reference
+    static GameEngine& get_instance();
+
     void set_score_board(ScoreBoard* board);
     void start();
     bool is_running() const;

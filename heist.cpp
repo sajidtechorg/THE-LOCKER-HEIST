@@ -1287,6 +1287,13 @@ void ScoreBoard::display() const {
 // ---------- game engine ----------
 
 // sets default values and seeds the random number generator
+// static local variable: it is created once, the first time this function runs,
+// and it lives until the program ends
+GameEngine& GameEngine::get_instance() {
+    static GameEngine instance;
+    return instance;
+}
+
 GameEngine::GameEngine() {
     state = Menu;
     max_turns = default_max_turns;
@@ -1648,6 +1655,9 @@ void GameEngine::test_interview_person() {
     rack_word2.add_tile(clue.clueLetter);
     interviewed[index] = true;
     detective.use_turn();
+    // polymorphism: display() is virtual, so the real class of the person decides the text
+    cout << "You interviewed: ";
+    person->display();
     cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
          << " of Word 2." << endl;
     cout << "Letter has been placed." << endl;

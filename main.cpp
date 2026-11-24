@@ -3,7 +3,8 @@
 int main() {
     // the score board is created here and only connected to the engine (association)
     ScoreBoard score_board;
-    GameEngine engine;
+    // the engine is a singleton, so it is taken with get_instance() as a reference
+    GameEngine& engine = GameEngine::get_instance();
     engine.set_score_board(&score_board);
     engine.start();
 
