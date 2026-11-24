@@ -1648,6 +1648,9 @@ void GameEngine::test_interview_person() {
     rack_word2.add_tile(clue.clueLetter);
     interviewed[index] = true;
     detective.use_turn();
+    // polymorphism: display() is virtual, so the real class of the person decides the text
+    cout << "You interviewed: ";
+    person->display();
     cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
          << " of Word 2." << endl;
     cout << "Letter has been placed." << endl;
