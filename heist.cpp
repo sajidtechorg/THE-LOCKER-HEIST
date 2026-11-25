@@ -1407,7 +1407,7 @@ void GameEngine::show_title() const {
 
 void GameEngine::show_main_menu() const {
     cout << endl;
-    cout << "-------- Main menu --------" << endl;
+    cout << "-------- Main Menu --------" << endl;
     cout << "[1] New game" << endl;
     cout << "[2] View leader/score board" << endl;
     cout << "[3] About" << endl;
@@ -1442,16 +1442,6 @@ void GameEngine::show_rules() {
     cout << "You win by accusing the correct culprit" << endl;
     cout << "You lose when credibility reaches zero or the turns run out" << endl;
     cout << "Viewing the scrabble board is free and does not use a turn" << endl;
-}
-
-// temporary list that shows polymorphism, module 13 replaces it with the character menu
-void GameEngine::show_characters() const {
-    cout << endl;
-    cout << "-------- People in the cottage --------" << endl;
-    for (int i = 0; i < total_characters; i++) {
-        cout << "[" << (i + 1) << "] ";
-        cout << *characters[i] << endl;
-    }
 }
 
 // reads rules.txt, falls back to the default values if it is missing or corrupt
@@ -1592,21 +1582,12 @@ void GameEngine::set_score_board(ScoreBoard* board) {
     score_board = board;
 }
 
-// temporary test: saves the current state of the game as a finished game
-// the real version is finish_game(), added with the game menu in module 13
-void GameEngine::test_save_result() {
-    if (score_board == 0) {
-        throw FileException("The score board is not connected");
-    }
-    cout << "Save this game as a win? (Y = WIN, N = LOSE): ";
-    bool won = read_yes_no();
-    int turns_left = max_turns - detective.get_turns();
-    if (turns_left < 0) {
-        turns_left = 0;
-    }
-    score_board->add_score(detective.get_name(), won, detective.get_credibility(),
-                           turns_left, culprit_role);
-    cout << "Result saved on the score board" << endl;
+// ---------- module 13: screens, menus and game actions ----------
+
+// shows the numbers the detective must watch
+void GameEngine::show_status() const {
+    cout << "Credibility: " << detective.get_credibility()
+         << " | Turns used: " << detective.get_turns() << " of " << max_turns << endl;
 }
 
 // shows both racks merged into one clue, using the + operator of the rack
@@ -1621,27 +1602,127 @@ void GameEngine::show_rack() const {
     cout << endl;
 }
 
-// temporary test: interview one person and collect a letter for word 2
-// every problem is thrown as an exception and handled in main()
-void GameEngine::test_interview_person() {
+// lists all eight people with their interview status, uses the << operator of character
+void GameEngine::show_character_menu() const {
     cout << endl;
-    cout << "====== Character menu (temporary test) ======" << endl;
+    cout << "====== Character menu ======" << endl;
     for (int i = 0; i < total_characters; i++) {
         cout << "[" << (i + 1) << "] " << *characters[i] << " - "
              << (interviewed[i] ? "Interviewed" : "NOT interviewed") << endl;
     }
     cout << "[0] Back" << endl;
+    cout << "============================" << endl;
+}
+
+// one pass of the game menu, every action is one turn except viewing the board
+void GameEngine::game_menu_step() {
+    cout << endl;
+    cout << "--- TURN " << (detective.get_turns() + 1) << " ---" << endl;
+    show_status();
+    show_rack();
+    cout << "-------- Game Menu --------" << endl;
+    cout << "[1] Visit a Location" << endl;
+    cout << "[2] Interview a Person" << endl;
+    cout << "[3] View Scrabble Board (free - no turn)" << endl;
+    cout << "[4] Form a Word" << endl;
+    cout << "[5] Accuse a Suspect" << endl;
+    cout << "[6] Quit" << endl;
+    cout << "Choice: ";
+
+    int choice = read_choice(1, 6);
+    switch (choice) {
+    case 1:
+        visit_location();
+        break;
+    case 2:
+        interview_person();
+        break;
+    case 3:
+        view_board();
+        break;
+    case 4:
+        form_word();
+        break;
+    case 5:
+        accuse_suspect();
+        break;
+    case 6:
+        quit_game();
+        break;
+    }
+    check_end_conditions();
+}
+
+// visiting a location gives a letter for word 1
+void GameEngine::visit_location() {
+    cout << endl;
+    cout << "====== Location menu ======" << endl;
+    cottage.display();
+    cout << "[0] Back" << endl;
+    cout << "===========================" << endl;
+    cout << "Pick: ";
+
+    int pick = read_choice(0, cottage.get_location_count());
+    if (pick == 0) {
+        return;
+    }
+    int index = pick - 1;
+    string place_name = underscore_to_space(cottage.get_location(index).locName);
+
+    if (cottage.is_searched(index)) {
+        cout << "You have already searched the " << place_name << ". Search again? (Y/N): ";
+        if (!read_yes_no()) {
+            return;
+        }
+        // repeating a search shows the same letter again, it only wastes a turn
+        Clue again = cottage.peek(index);
+        cout << "Letter " << again.clueLetter << " is at position " << again.cluePosition
+             << " of Word 1 (already placed)" << endl;
+        detective.use_turn();
+        detective.lose_credibility(wrong_turn_penalty);
+        cout << "That was a wasted turn, you lose " << wrong_turn_penalty << " credibility" << endl;
+        return;
+    }
+
+    cout << "You have NOT searched the " << place_name << " yet. Search? (Y/N): ";
+    if (!read_yes_no()) {
+        return;
+    }
+    // the tile is placed first, so a failure leaves the place unsearched
+    Clue clue = cottage.peek(index);
+    scrabble.place_tile(clue);
+    rack_word1.add_tile(clue.clueLetter);
+    cottage.search(index);
+    detective.use_turn();
+    cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
+         << " of Word 1." << endl;
+    cout << "Letter has been placed." << endl;
+}
+
+// interviewing a person gives a letter for word 2
+void GameEngine::interview_person() {
+    show_character_menu();
     cout << "Pick: ";
 
     int pick = read_choice(0, total_characters);
     if (pick == 0) {
         return;
     }
-
     int index = pick - 1;
     Character* person = characters[index];
+
     if (interviewed[index]) {
-        throw InvalidInputException("You have already interviewed " + person->get_name());
+        cout << "You have already interviewed " << person->get_name() << ". Interview again? (Y/N): ";
+        if (!read_yes_no()) {
+            return;
+        }
+        // repeating an interview shows the same letter again, it only wastes a turn
+        cout << "Letter " << person->get_letter() << " is at position " << person->get_position()
+             << " of Word 2 (already placed)" << endl;
+        detective.use_turn();
+        detective.lose_credibility(wrong_turn_penalty);
+        cout << "That was a wasted turn, you lose " << wrong_turn_penalty << " credibility" << endl;
+        return;
     }
 
     // polymorphism: each character type knows its own required credibility
@@ -1650,6 +1731,10 @@ void GameEngine::test_interview_person() {
                                    + to_string(person->required_credibility()) + " credibility");
     }
 
+    cout << "You have NOT interviewed " << person->get_name() << " yet. Interview? (Y/N): ";
+    if (!read_yes_no()) {
+        return;
+    }
     Clue clue = { person->get_letter(), person->get_position(), person->get_row() };
     scrabble.place_tile(clue);
     rack_word2.add_tile(clue.clueLetter);
@@ -1661,46 +1746,32 @@ void GameEngine::test_interview_person() {
     cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
          << " of Word 2." << endl;
     cout << "Letter has been placed." << endl;
-    show_rack();
-    scrabble.display();
 }
 
-// temporary test: visit one location and place its letter on the board
-// the real version comes with the game menu in module 13
-void GameEngine::test_visit_location() {
+// showing the board is free and uses no turn
+void GameEngine::view_board() const {
     cout << endl;
-    cout << "====== Location menu (temporary test) ======" << endl;
-    cottage.display();
-    cout << "[0] Back" << endl;
-    cout << "Pick: ";
-
-    int pick = read_choice(0, cottage.get_location_count());
-    if (pick == 0) {
-        return;
-    }
-
-    int index = pick - 1;
-    if (cottage.is_searched(index)) {
-        cout << "You have already searched this place. Search again? (Y/N): ";
-        if (read_yes_no()) {
-            Clue again = cottage.peek(index);
-            cout << "Letter " << again.clueLetter << " is at position " << again.cluePosition
-                 << " of Word 1" << endl;
-        }
-        return;
-    }
-
-    // the tile is placed first, so a failure leaves the place unsearched
-    Clue clue = cottage.peek(index);
-    scrabble.place_tile(clue);
-    rack_word1.add_tile(clue.clueLetter);
-    cottage.search(index);
-    detective.use_turn();
-    cout << "Letter " << clue.clueLetter << " collected at position " << clue.cluePosition
-         << " of Word 1." << endl;
-    cout << "Letter has been placed." << endl;
     show_rack();
-    scrabble.display();
+    cout << scrabble;
+}
+
+// temporary, forming a word is built in module 14
+void GameEngine::form_word() {
+    cout << "Forming a word will be added in module 14" << endl;
+}
+
+// temporary, accusing a suspect is built in module 14
+void GameEngine::accuse_suspect() {
+    cout << "Accusing a suspect will be added in module 14" << endl;
+}
+
+// asks first, then goes back to the main menu, nothing is saved on the score board
+void GameEngine::quit_game() {
+    cout << "Quit this game and go back to the main menu? (Y/N): ";
+    if (read_yes_no()) {
+        cout << "You left the investigation" << endl;
+        state = Menu;
+    }
 }
 
 // the game is lost when credibility or turns run out
@@ -1747,46 +1818,7 @@ void GameEngine::start_new_game() {
     state = Playing;
 
     cout << "A culprit has been secretly chosen. The game begins!" << endl;
-    cout << "Credibility: " << detective.get_credibility()
-         << " | Turns used: " << detective.get_turns() << endl;
-    show_characters();
-    cout << endl;
-    scrabble.display();
-}
-
-// one pass of the temporary game menu, module 13 replaces it with the real one
-void GameEngine::test_menu_step() {
-    cout << endl;
-    cout << "---- Temporary test menu ----" << endl;
-    cout << "Credibility: " << detective.get_credibility()
-         << " | Turns used: " << detective.get_turns() << " of " << max_turns << endl;
-    show_rack();
-    cout << "[1] Visit a location" << endl;
-    cout << "[2] Interview a person" << endl;
-    cout << "[3] View scrabble board" << endl;
-    cout << "[4] Save a test result on the score board" << endl;
-    cout << "[0] Back to main menu" << endl;
-    cout << "Choice: ";
-
-    int choice = read_choice(0, 4);
-    switch (choice) {
-    case 0:
-        state = Menu;
-        break;
-    case 1:
-        test_visit_location();
-        break;
-    case 2:
-        test_interview_person();
-        break;
-    case 3:
-        scrabble.display();
-        break;
-    case 4:
-        test_save_result();
-        break;
-    }
-    check_end_conditions();
+    view_board();
 }
 
 // one pass of the main menu
@@ -1830,7 +1862,7 @@ void GameEngine::run_step() {
     if (state == Menu) {
         main_menu_step();
     } else if (state == Playing) {
-        test_menu_step();
+        game_menu_step();
     } else if (state == Won || state == Lost) {
         // temporary end screen, the real finish_game() comes in module 13
         cout << endl;
