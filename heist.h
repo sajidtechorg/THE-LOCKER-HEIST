@@ -600,6 +600,8 @@ public:
 // ---------- game engine ----------
 
 // runs the whole game: menus, loading files and starting a new game
+// module 12, singleton pattern: only one engine can ever exist, so the whole game
+// runs as a single entity, the one object is reached with get_instance()
 class GameEngine {
 private:
     // fallback values used when rules.txt is missing or corrupt
@@ -641,9 +643,13 @@ private:
     Character* culprit;
     string culprit_role;
 
-    // the engine owns raw pointers, so copying it is not allowed
+    // singleton: the constructor is private so nobody outside can create an engine
+    // copying is not allowed either, it would make a second engine and the engine
+    // owns raw pointers (copy functions are declared here and never defined)
+    GameEngine();
     GameEngine(const GameEngine& other);
     GameEngine& operator=(const GameEngine& other);
+    ~GameEngine();
 
     static bool has_space(const string& text);
     static Character* create_character(const string& role, const string& name,
@@ -656,7 +662,6 @@ private:
     void show_main_menu() const;
     void show_about() const;
     void show_rules();
-    void show_characters() const;
 
     void load_rules();
     void load_characters();
@@ -664,18 +669,29 @@ private:
     void free_characters();
     void start_new_game();
 
-    // temporary tests of modules 4 and 5, module 13 replaces them with the real game menu
-    void main_menu_step();
-    void test_menu_step();
+    // module 13: screens and menus
+    void show_status() const;
     void show_rack() const;
-    void test_visit_location();
-    void test_interview_person();
-    void test_save_result();
+    void show_character_menu() const;
+    void main_menu_step();
+    void game_menu_step();
+
+    // module 13: the actions of the game menu
+    void visit_location();
+    void interview_person();
+    void view_board() const;
+    void form_word();
+    void accuse_suspect();
+    void quit_game();
     void check_end_conditions();
+    void finish_game();
+    void clear_screen() const;
 
 public:
-    GameEngine();
-    ~GameEngine();
+    // access method: creates the engine on the first call and returns the same one every time
+    // it returns a reference, so the caller must also store it as a reference
+    static GameEngine& get_instance();
+
     void set_score_board(ScoreBoard* board);
     void start();
     bool is_running() const;

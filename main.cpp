@@ -3,7 +3,7 @@
 int main() {
     // the score board is created here and only connected to the engine (association)
     ScoreBoard score_board;
-    GameEngine engine;
+    GameEngine& engine = GameEngine::get_instance();
     engine.set_score_board(&score_board);
     engine.start();
 
